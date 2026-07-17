@@ -2,16 +2,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:setpoint_ai/app.dart';
 
 void main() {
-  testWidgets('SetPoint AI shows home tab and bottom navigation', (tester) async {
+  testWidgets('Home dashboard shows greeting, metrics, and sections', (tester) async {
     await tester.pumpWidget(const SetPointApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('SetPoint AI'), findsOneWidget);
+    expect(find.textContaining('Good morning'), findsOneWidget);
+    expect(find.text('Maya Chen'), findsOneWidget);
+    expect(find.text('87%'), findsOneWidget);
+    expect(find.text('Form'), findsOneWidget);
+    expect(find.text("Today's Session"), findsOneWidget);
+    expect(find.text('Drive • Toss • Contact'), findsOneWidget);
+    expect(find.text('Common Skills'), findsOneWidget);
+    expect(find.text('Continue Learning'), findsOneWidget);
     expect(find.text('Home'), findsWidgets);
-    expect(find.text('Library'), findsOneWidget);
-    expect(find.text('Coach'), findsOneWidget);
-    expect(find.text('Recap'), findsOneWidget);
-    expect(find.text('Rehab'), findsOneWidget);
+  });
+
+  testWidgets('Bottom navigation switches to Library', (tester) async {
+    await tester.pumpWidget(const SetPointApp());
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Library'));
     await tester.pumpAndSettle();
