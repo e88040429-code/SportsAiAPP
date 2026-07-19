@@ -9,6 +9,12 @@ abstract final class AppTheme {
       seedColor: AppColors.primary,
       primary: AppColors.primary,
       onPrimary: AppColors.onPrimary,
+      secondary: AppColors.action,
+      onSecondary: AppColors.onPrimary,
+      tertiary: AppColors.accent,
+      onTertiary: AppColors.darkestNavy,
+      error: AppColors.error,
+      onError: AppColors.onPrimary,
       surface: AppColors.surface,
       onSurface: AppColors.onSurface,
       brightness: Brightness.light,
@@ -20,7 +26,10 @@ abstract final class AppTheme {
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.background,
-      textTheme: textTheme,
+      textTheme: textTheme.apply(
+        bodyColor: AppColors.onBackground,
+        displayColor: AppColors.onBackground,
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.background,
         foregroundColor: AppColors.onBackground,
@@ -38,25 +47,37 @@ abstract final class AppTheme {
           borderRadius: BorderRadius.circular(24),
         ),
       ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.cta,
+          foregroundColor: AppColors.onPrimary,
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.cta,
+          foregroundColor: AppColors.onPrimary,
+        ),
+      ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: AppColors.surface,
-        indicatorColor: AppColors.primary.withValues(alpha: 0.15),
+        indicatorColor: AppColors.action.withValues(alpha: 0.15),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return textTheme.labelMedium?.copyWith(
             fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-            color: selected ? AppColors.primary : AppColors.onSurface,
+            color: selected ? AppColors.action : AppColors.onSurface,
           );
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return IconThemeData(
-            color: selected ? AppColors.primary : AppColors.onSurface,
+            color: selected ? AppColors.action : AppColors.onSurface,
           );
         }),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: AppColors.primary,
+        backgroundColor: AppColors.cta,
         foregroundColor: AppColors.onPrimary,
       ),
     );

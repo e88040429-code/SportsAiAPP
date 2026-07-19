@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/app_colors.dart';
+
 class HomeUser {
   const HomeUser({required this.name, required this.greeting});
 
@@ -82,19 +84,19 @@ abstract final class HomeMockData {
       id: 'spike',
       label: 'Spike',
       icon: Icons.flash_on,
-      accent: Color(0xFFFF7F32),
+      accent: AppColors.primary,
     ),
     SkillChip(
       id: 'jump-serve',
       label: 'Jump Serve',
       icon: Icons.arrow_upward,
-      accent: Color(0xFF3498DB),
+      accent: AppColors.action,
     ),
     SkillChip(
       id: 'overhead-set',
       label: 'Overhead Set',
       icon: Icons.pan_tool_alt,
-      accent: Color(0xFF2ECC71),
+      accent: AppColors.highlight,
     ),
   ];
 

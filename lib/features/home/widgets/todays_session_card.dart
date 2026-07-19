@@ -53,7 +53,7 @@ class TodaysSessionCard extends StatelessWidget {
                             end: Alignment.bottomRight,
                             colors: [
                               AppColors.primary.withValues(alpha: 0.85),
-                              const Color(0xFFE85D04),
+                              AppColors.cta,
                             ],
                           ),
                         ),
