@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_colors.dart';
+import 'data/drill_detail_mock_data.dart';
+import 'widgets/drill_description_section.dart';
+import 'widgets/drill_video_placeholder.dart';
+import 'widgets/key_positions_timeline.dart';
+import 'widgets/start_drill_button.dart';
 
 class DrillDetailScreen extends StatelessWidget {
   const DrillDetailScreen({super.key, required this.drillId});
@@ -10,6 +15,8 @@ class DrillDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final detail = DrillDetailMockData.forId(drillId);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Drill Detail'),
@@ -18,32 +25,44 @@ class DrillDetailScreen extends StatelessWidget {
           onPressed: () => context.pop(),
         ),
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.slow_motion_video, size: 56, color: AppColors.primary),
-              const SizedBox(height: 16),
-              Text(
-                'Drill: $drillId',
-                style: Theme.of(context).textTheme.headlineSmall,
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DrillVideoPlaceholder(durationMinutes: detail.durationMinutes),
+                  const SizedBox(height: 24),
+                  DrillDescriptionSection(detail: detail),
+                  const SizedBox(height: 28),
+                  KeyPositionsTimeline(positions: detail.keyPositions),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Video player, coach info, and key positions coming soon.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.7),
-                    ),
-              ),
-            ],
+            ),
           ),
-        ),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 12,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: StartDrillButton(
+                onPressed: () => context.go('/coach'),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
