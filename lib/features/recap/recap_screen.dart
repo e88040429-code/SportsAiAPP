@@ -1,34 +1,52 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/app_colors.dart';
+import 'data/recap_mock_data.dart';
+import 'widgets/joint_angles_list.dart';
+import 'widgets/rep_bar_chart.dart';
+import 'widgets/score_circle.dart';
+import 'widgets/you_vs_coach_section.dart';
 
 class RecapScreen extends StatelessWidget {
   const RecapScreen({super.key});
 
+  void _onShare(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Share coming soon'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Session Recap')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+      appBar: AppBar(
+        title: const Text('Session Recap'),
+        actions: [
+          IconButton(
+            onPressed: () => _onShare(context),
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Share',
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(Icons.insights_outlined, size: 56, color: AppColors.primary),
-              const SizedBox(height: 16),
-              Text('Recap', style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 8),
-              Text(
-                'Form score, You vs Coach, and rep charts coming soon.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.7),
-                    ),
+              Center(
+                child: ScoreCircle(score: RecapMockData.overallScore),
               ),
+              const SizedBox(height: 28),
+              const YouVsCoachSection(),
+              const SizedBox(height: 28),
+              const JointAnglesList(comparisons: RecapMockData.jointAngles),
+              const SizedBox(height: 28),
+              const RepBarChart(reps: RecapMockData.repScores),
             ],
           ),
         ),
