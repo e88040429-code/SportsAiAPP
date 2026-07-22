@@ -1,34 +1,82 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/app_colors.dart';
+import 'data/rehab_mock_data.dart';
+import 'widgets/active_program_card.dart';
+import 'widgets/body_highlight_section.dart';
+import 'widgets/complete_session_button.dart';
+import 'widgets/readiness_card.dart';
+import 'widgets/todays_exercises_checklist.dart';
 
-class RehabScreen extends StatelessWidget {
+class RehabScreen extends StatefulWidget {
   const RehabScreen({super.key});
 
   @override
+  State<RehabScreen> createState() => _RehabScreenState();
+}
+
+class _RehabScreenState extends State<RehabScreen> {
+  final Set<String> _completedIds = {};
+
+  void _toggleExercise(String id) {
+    setState(() {
+      if (_completedIds.contains(id)) {
+        _completedIds.remove(id);
+      } else {
+        _completedIds.add(id);
+      }
+    });
+  }
+
+  void _onCompleteSession() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Great work! Session logged.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Rehab')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(Icons.healing_outlined, size: 56, color: AppColors.primary),
-              const SizedBox(height: 16),
-              Text('Rehab', style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 8),
               Text(
-                'Recovery readiness and exercise programs coming soon.',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.7),
-                    ),
+                'Rehab Hub',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
+              const SizedBox(height: 4),
+              Text(
+                'Recovery readiness and daily rehab plan',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const ReadinessCard(
+                percent: RehabMockData.readinessPercent,
+                message: RehabMockData.readinessMessage,
+              ),
+              const SizedBox(height: 28),
+              const BodyHighlightSection(),
+              const SizedBox(height: 28),
+              const ActiveProgramCard(program: RehabMockData.activeProgram),
+              const SizedBox(height: 28),
+              TodaysExercisesChecklist(
+                exercises: RehabMockData.todaysExercises,
+                completedIds: _completedIds,
+                onToggle: _toggleExercise,
+              ),
+              const SizedBox(height: 24),
+              CompleteSessionButton(onPressed: _onCompleteSession),
             ],
           ),
         ),
