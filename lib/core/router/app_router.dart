@@ -9,6 +9,7 @@ import '../../features/library/library_screen.dart';
 import '../../features/recap/recap_screen.dart';
 import '../../features/rehab/rehab_screen.dart';
 import '../../features/sports/sports_screen.dart';
+import '../sport/app_sport.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -74,6 +75,20 @@ final GoRouter appRouter = GoRouter(
         StatefulShellBranch(
           routes: [
             GoRoute(
+              path: '/ask',
+              name: 'ask',
+              builder: (context, state) => const AiResponseScreen(
+                lockedSport: AppSport.volleyball,
+                title: 'Ask Volleyball',
+                hintText: 'Ask anything about volleyball…',
+                qaMode: true,
+              ),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
               path: '/recap',
               name: 'recap',
               builder: (context, state) => const RecapScreen(),
@@ -128,6 +143,11 @@ class AppShell extends StatelessWidget {
             icon: Icon(Icons.videocam_outlined),
             selectedIcon: Icon(Icons.videocam),
             label: 'Coach',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.sports_volleyball_outlined),
+            selectedIcon: Icon(Icons.sports_volleyball),
+            label: 'Ask AI',
           ),
           NavigationDestination(
             icon: Icon(Icons.insights_outlined),
