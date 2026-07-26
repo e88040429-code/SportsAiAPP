@@ -69,7 +69,7 @@ Drill detail: `/library/drill/:drillId` (pushed on root navigator)
 
 ### Packages in use
 
-`google_fonts`, `go_router`, `camera`. Pose overlay is still a **fake painted skeleton** (`FakeSkeletonOverlay` / `PoseSkeletonPainter`). Defer `google_mlkit_pose_detection` until Iteration 8.
+`google_fonts`, `go_router`, `camera`. Pose overlay is still a **fake painted skeleton** (`FakeSkeletonOverlay` / `PoseSkeletonPainter`). Defer real pose inference until Iteration 8 — use **`pose_detection`** (web + iOS + Android), not ML Kit.
 
 ### Conventions for new work
 
@@ -120,7 +120,7 @@ Work in this order unless the user redirects. Each row is one small iteration.
 | **5** | Session Recap UI | Score circle, You vs Coach frames, joint angle rows, rep bar chart | `fl_chart` or custom bars |
 | **6** | Rehab Hub UI | Readiness card, body highlight placeholders, active program, today's exercises checklist | none |
 | **7** | Multi-sport switcher | Football / volleyball / basketball selector; shared drill models; Home/Library filter by sport | none |
-| **8** | Video + pose pipeline | See sub-iterations **8.1–8.6** below | `google_mlkit_pose_detection` (+ commons); mobile first |
+| **8** | Video + pose pipeline | See sub-iterations **8.1–8.6** below | [`pose_detection`](https://pub.dev/packages/pose_detection) (web + iOS + Android) |
 | **9+** | Live AI referee | Real-time hard-call assist on field/court — same vision stack, new product mode | TBD after Iter 8 |
 
 ---
@@ -131,37 +131,41 @@ Work in this order unless the user redirects. Each row is one small iteration.
 
 **Guiding order:** Detect → draw on body → metrics/cues → compare to reference → recap. Do not jump to coaching tips until the skeleton tracks the athlete correctly.
 
-**Platform note:** ML Kit is **Android/iOS only**, not Chrome. Keep fake skeleton (or a clear “pose tracking requires mobile” message) on web. Prefer a device/emulator for 8.1+.
+**Chosen stack: [`pose_detection`](https://pub.dev/packages/pose_detection)** (TFLite / BlazePose-style landmarks)
+- Runs on **Flutter Web** (LiteRT.js: WebGPU with WASM fallback), **Android**, and **iOS** with one Dart API — fits Chrome-first development.
+- Prefer this over `google_mlkit_pose_detection`, which is mobile-only and blocks web iteration.
+- Do **not** add ML Kit unless a later mobile-only quality gap forces a fallback.
+- Landmark count is BlazePose-style (~33 points); map down to the painter’s joint/bone model in 8.3 (painter today uses a 17-joint COCO-style layout).
 
-### 8.1 — Add ML Kit and pose service shell
-- Add `google_mlkit_pose_detection` (and `google_mlkit_commons` as needed).
-- Create a small pose service API under something like `lib/features/coach/pose/` (e.g. `PoseDetectorService`) that can start/stop and emit landmarks.
-- Gate real detection behind mobile (`!kIsWeb` / platform checks); web keeps fake overlay.
-- **Done when:** package resolves on Android/iOS; app still runs on Chrome without crashing.
+### 8.1 — Add `pose_detection` and pose service shell
+- Add `pose_detection` to `pubspec.yaml`.
+- Create a small pose service API under something like `lib/features/coach/pose/` (e.g. `PoseDetectorService`) that can start/stop and emit landmarks via a shared `PoseFrame` model.
+- Initialize detector once (lite/full/heavy model as needed); dispose cleanly with the Coach screen.
+- **Done when:** package resolves; detector creates successfully on Chrome and (when available) mobile; app does not regress existing Coach UI.
 
-### 8.2 — Stream camera frames into the detector
-- From existing `CameraController` in `CoachCameraPreview`, enable `startImageStream(...)`.
-- Convert each `CameraImage` → ML Kit `InputImage` (rotation, front-camera mirroring, format).
-- Throttle processing (e.g. every Nth frame or ~15–30 FPS) so UI stays smooth.
-- **Done when:** detector receives frames on a physical device/emulator with no sustained frame drops / OOM.
+### 8.2 — Feed camera / image frames into the detector
+- From existing `CameraController` in `CoachCameraPreview`, capture frames for inference (image stream and/or periodic snapshot → `Uint8List` / bytes — web cannot use `dart:io` `File`).
+- Call `pose_detection` `detect(...)` on those bytes; throttle (e.g. every Nth frame or ~15–30 FPS) so UI stays smooth.
+- Handle front-camera mirroring and preview letterboxing when aligning results to the HUD.
+- **Done when:** detector receives frames on Chrome (and mobile when available) with no sustained freezes / OOM.
 
 ### 8.3 — Normalize landmarks into painter format
-- Map ML Kit landmarks (+ confidence) to the same 17-joint + bone list `PoseSkeletonPainter` already uses.
+- Map package landmarks (+ confidence) onto the joint + bone list `PoseSkeletonPainter` uses (subset/remap from ~33 → app skeleton).
 - Convert image coords → overlay coords (preview aspect ratio / letterboxing / front-cam flip).
-- Introduce a shared model (e.g. `PoseFrame` with `List<Offset>` or normalized joints) so painter and metrics share one source of truth.
-- **Done when:** unit-testable mapping exists; sample landmarks paint in the correct places on a still test image or fixed frame.
+- Keep a shared `PoseFrame` so painter and metrics share one source of truth.
+- **Done when:** unit-testable mapping exists; sample landmarks paint in the correct places on a still test image or fixed frame (Chrome is fine).
 
 ### 8.4 — Replace fake overlay with live skeleton
 - In `coach_screen.dart`, swap `FakeSkeletonOverlay()` for a widget fed by live `PoseFrame`s.
 - Keep `PoseSkeletonPainter` drawing logic; stop using hardcoded `_normalizedJoints` for the live path.
 - Optionally hide overlay or show last-good pose when confidence is low.
-- **Done when:** on-device, skeleton visibly tracks the athlete in Live Coach (not a static fake pose).
+- **Done when:** on Chrome (and mobile), skeleton visibly tracks the athlete in Live Coach (not a static fake pose).
 
 ### 8.5 — Derive coaching cues and metrics from pose
 - From landmarks, compute joint angles (elbow, knee, etc.), symmetry, timing/rep heuristics.
 - Drive `CueBubble` and `CoachMetricsBar` from those values instead of `CoachMockData`.
 - Later in this slice or as follow-up: compare live pose to Library reference poses (“You vs Coach” inputs).
-- **Done when:** cues/metrics update while moving; mock constants are no longer the live source on mobile.
+- **Done when:** cues/metrics update while moving; mock constants are no longer the live source where detection runs.
 
 ### 8.6 — Wire recording → Session Recap
 - On stop record, persist clip (and/or sampled pose frames) from the session.
@@ -171,5 +175,5 @@ Work in this order unless the user redirects. Each row is one small iteration.
 ### Explicit non-goals until later
 - Backend / auth / cloud pose storage
 - Full sport-rule AI referee (that is **Iter 9+**, reusing this vision stack)
-- Perfect web parity for ML Kit (use fallback UI on Chrome)
+- Adding `google_mlkit_pose_detection` “just in case” — stay on `pose_detection` unless proven insufficient on device
 
