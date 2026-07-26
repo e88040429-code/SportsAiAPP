@@ -64,11 +64,13 @@ class _CoachScreenState extends State<CoachScreen> {
           SafeArea(
             child: Stack(
               children: [
-                // Pose overlay on top of the live feed
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 28, vertical: 72),
-                    child: FakeSkeletonOverlay(),
+                // Pose overlay on top of the live feed (ignore so camera controls stay tappable)
+                const IgnorePointer(
+                  child: Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 48, vertical: 48),
+                      child: FakeSkeletonOverlay(),
+                    ),
                   ),
                 ),
 

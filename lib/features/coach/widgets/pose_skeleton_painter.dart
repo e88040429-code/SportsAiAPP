@@ -91,9 +91,13 @@ class FakeSkeletonOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const AspectRatio(
-      aspectRatio: 9 / 16,
-      child: CustomPaint(
+    final width = MediaQuery.sizeOf(context).width;
+    // Wide desktop → landscape skeleton; phones stay portrait.
+    final aspect = width >= 900 ? 16 / 10 : 9 / 16;
+
+    return AspectRatio(
+      aspectRatio: aspect,
+      child: const CustomPaint(
         painter: PoseSkeletonPainter(),
       ),
     );

@@ -1,13 +1,35 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:setpoint_ai/app.dart';
 
+Future<void> _enterAppAsVolleyball(WidgetTester tester) async {
+  await tester.pumpWidget(const SetPointApp());
+  await tester.pumpAndSettle();
+
+  expect(find.textContaining('Welcome, Emma'), findsOneWidget);
+
+  await tester.tap(find.text('Volleyball'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
-  testWidgets('Home dashboard shows greeting, metrics, and sections', (tester) async {
+  testWidgets('Welcome screen asks Emma to pick a sport', (tester) async {
     await tester.pumpWidget(const SetPointApp());
     await tester.pumpAndSettle();
 
+    expect(find.textContaining('Welcome, Emma'), findsOneWidget);
+    expect(
+      find.text('What sport would you like to practice today?'),
+      findsOneWidget,
+    );
+    expect(find.text('Volleyball'), findsOneWidget);
+    expect(find.text('Soccer'), findsOneWidget);
+  });
+
+  testWidgets('Picking a sport opens the Home dashboard', (tester) async {
+    await _enterAppAsVolleyball(tester);
+
     expect(find.textContaining('Good morning'), findsOneWidget);
-    expect(find.text('Maya Chen'), findsOneWidget);
+    expect(find.text('Emma'), findsOneWidget);
     expect(find.text('87%'), findsOneWidget);
     expect(find.text('Form'), findsOneWidget);
     expect(find.text("Today's Session"), findsOneWidget);
@@ -18,8 +40,7 @@ void main() {
   });
 
   testWidgets('Library shows search, toggle, chips, and drill sections', (tester) async {
-    await tester.pumpWidget(const SetPointApp());
-    await tester.pumpAndSettle();
+    await _enterAppAsVolleyball(tester);
 
     await tester.tap(find.text('Library'));
     await tester.pumpAndSettle();
@@ -36,8 +57,7 @@ void main() {
   });
 
   testWidgets('Library drill tap opens drill detail', (tester) async {
-    await tester.pumpWidget(const SetPointApp());
-    await tester.pumpAndSettle();
+    await _enterAppAsVolleyball(tester);
 
     await tester.tap(find.text('Library'));
     await tester.pumpAndSettle();
@@ -56,8 +76,7 @@ void main() {
   });
 
   testWidgets('Drill detail Start Drill navigates to Coach', (tester) async {
-    await tester.pumpWidget(const SetPointApp());
-    await tester.pumpAndSettle();
+    await _enterAppAsVolleyball(tester);
 
     await tester.tap(find.text('Library'));
     await tester.pumpAndSettle();

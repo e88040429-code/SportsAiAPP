@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/sport/app_sport.dart';
 import 'data/library_mock_data.dart';
 import 'widgets/category_chips_row.dart';
 import 'widgets/drill_list.dart';
@@ -23,9 +24,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
   String _query = '';
 
   @override
+  void initState() {
+    super.initState();
+    appSportController.addListener(_onSportChanged);
+  }
+
+  @override
   void dispose() {
+    appSportController.removeListener(_onSportChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSportChanged() {
+    setState(() => _categoryId = 'all');
   }
 
   void _onModeChanged(LibraryMode mode) {
@@ -42,10 +54,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final categories = LibraryMockData.categoriesFor(_mode);
-    final featured = LibraryMockData.featuredFor(_mode);
+    final sport = appSportController.sport;
+    final categories = LibraryMockData.categoriesFor(_mode, sport);
+    final featured = LibraryMockData.featuredFor(_mode, sport);
     final drills = LibraryMockData.filter(
       mode: _mode,
+      sport: sport,
       categoryId: _categoryId,
       query: _query,
     );
@@ -70,7 +84,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Browse sport-specific drills and poses',
+                '${sport.label} drills and poses',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
@@ -93,7 +107,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
               if (featured != null &&
                   _query.trim().isEmpty &&
-                  (_categoryId == 'all' || featured.categoryId == _categoryId)) ...[
+                  (_categoryId == 'all' ||
+                      featured.categoryId == _categoryId)) ...[
                 const SizedBox(height: 24),
                 FeaturedDrillCard(
                   drill: featured,

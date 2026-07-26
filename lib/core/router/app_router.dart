@@ -1,19 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/ai_response/ai_response_screen.dart';
 import '../../features/coach/coach_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/library/drill_detail_screen.dart';
 import '../../features/library/library_screen.dart';
 import '../../features/recap/recap_screen.dart';
 import '../../features/rehab/rehab_screen.dart';
+import '../../features/sports/sports_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final GoRouter appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
-  initialLocation: '/home',
+  initialLocation: '/sports',
   routes: [
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/sports',
+      name: 'sports',
+      builder: (context, state) => const SportsScreen(),
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/ai',
+      name: 'ai',
+      builder: (context, state) => const AiResponseScreen(),
+    ),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
         return AppShell(navigationShell: navigationShell);

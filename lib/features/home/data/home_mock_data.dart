@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/sport/app_sport.dart';
 import '../../../core/theme/app_colors.dart';
 
 class HomeUser {
@@ -63,55 +64,112 @@ class LearningItem {
 
 abstract final class HomeMockData {
   static const user = HomeUser(
-    name: 'Maya Chen',
+    name: 'Emma',
     greeting: 'Good morning',
   );
 
-  static const metrics = <HomeMetric>[
-    HomeMetric(label: 'Form', value: '87%', icon: Icons.trending_up),
-    HomeMetric(label: 'Drills', value: '42', icon: Icons.sports_volleyball),
-    HomeMetric(label: 'This Week', value: '5.2h', icon: Icons.schedule),
-  ];
+  static List<HomeMetric> metricsFor(AppSport sport) {
+    return [
+      const HomeMetric(label: 'Form', value: '87%', icon: Icons.trending_up),
+      HomeMetric(
+        label: 'Drills',
+        value: sport == AppSport.volleyball ? '42' : '28',
+        icon: sport.icon,
+      ),
+      const HomeMetric(label: 'This Week', value: '5.2h', icon: Icons.schedule),
+    ];
+  }
 
-  static const todaysSession = SessionPreview(
-    title: 'Drive • Toss • Contact',
-    dayLabel: 'Day 14',
-    durationMinutes: 22,
-  );
+  static SessionPreview todaysSessionFor(AppSport sport) {
+    return switch (sport) {
+      AppSport.volleyball => const SessionPreview(
+          title: 'Drive • Toss • Contact',
+          dayLabel: 'Day 14',
+          durationMinutes: 22,
+        ),
+      AppSport.soccer => const SessionPreview(
+          title: 'Touch • Plant • Strike',
+          dayLabel: 'Day 9',
+          durationMinutes: 20,
+        ),
+    };
+  }
 
-  static const commonSkills = <SkillChip>[
-    SkillChip(
-      id: 'spike',
-      label: 'Spike',
-      icon: Icons.flash_on,
-      accent: AppColors.primary,
-    ),
-    SkillChip(
-      id: 'jump-serve',
-      label: 'Jump Serve',
-      icon: Icons.arrow_upward,
-      accent: AppColors.action,
-    ),
-    SkillChip(
-      id: 'overhead-set',
-      label: 'Overhead Set',
-      icon: Icons.pan_tool_alt,
-      accent: AppColors.highlight,
-    ),
-  ];
+  static List<SkillChip> commonSkillsFor(AppSport sport) {
+    return switch (sport) {
+      AppSport.volleyball => const [
+          SkillChip(
+            id: 'spike',
+            label: 'Spike',
+            icon: Icons.flash_on,
+            accent: AppColors.primary,
+          ),
+          SkillChip(
+            id: 'jump-serve',
+            label: 'Jump Serve',
+            icon: Icons.arrow_upward,
+            accent: AppColors.action,
+          ),
+          SkillChip(
+            id: 'overhead-set',
+            label: 'Overhead Set',
+            icon: Icons.pan_tool_alt,
+            accent: AppColors.highlight,
+          ),
+        ],
+      AppSport.soccer => const [
+          SkillChip(
+            id: 'power-shot',
+            label: 'Power Shot',
+            icon: Icons.sports_soccer,
+            accent: AppColors.primary,
+          ),
+          SkillChip(
+            id: 'inside-pass',
+            label: 'Inside Pass',
+            icon: Icons.swipe_right,
+            accent: AppColors.action,
+          ),
+          SkillChip(
+            id: 'close-control',
+            label: 'Close Control',
+            icon: Icons.directions_run,
+            accent: AppColors.highlight,
+          ),
+        ],
+    };
+  }
 
-  static const continueLearning = <LearningItem>[
-    LearningItem(
-      id: '3-step-approach',
-      title: '3-step approach',
-      subtitle: 'Spike fundamentals',
-      progress: 0.65,
-    ),
-    LearningItem(
-      id: 'rotator-cuff',
-      title: 'Rotator cuff resilience',
-      subtitle: 'Shoulder care',
-      progress: 0.40,
-    ),
-  ];
+  static List<LearningItem> continueLearningFor(AppSport sport) {
+    return switch (sport) {
+      AppSport.volleyball => const [
+          LearningItem(
+            id: '3-step-approach',
+            title: '3-step approach',
+            subtitle: 'Spike fundamentals',
+            progress: 0.65,
+          ),
+          LearningItem(
+            id: 'rotator-cuff',
+            title: 'Rotator cuff resilience',
+            subtitle: 'Shoulder care',
+            progress: 0.40,
+          ),
+        ],
+      AppSport.soccer => const [
+          LearningItem(
+            id: 'power-shot',
+            title: 'Power shot mechanics',
+            subtitle: 'Plant & strike',
+            progress: 0.55,
+          ),
+          LearningItem(
+            id: 'soccer-hip-mobility',
+            title: 'Hip mobility for strikers',
+            subtitle: 'Kick range',
+            progress: 0.35,
+          ),
+        ],
+    };
+  }
 }
