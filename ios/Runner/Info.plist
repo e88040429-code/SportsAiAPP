@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SetPoint AI needs photo library access so you can import training clips for form analysis.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SetPoint AI needs camera access for Live Coach form analysis.</string>
 	<key>NSMicrophoneUsageDescription</key>

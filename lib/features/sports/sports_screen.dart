@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/constants/app_strings.dart';
 import '../../core/sport/app_sport.dart';
-import '../../core/theme/app_colors.dart';
+import '../../core/theme/sport_colors.dart';
 import 'widgets/sport_option_card.dart';
 
 /// Full-screen welcome / sport picker shown on launch.
@@ -20,6 +20,7 @@ class SportsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = SportColors.of(appSportController.sport);
 
     return Scaffold(
       body: Container(
@@ -30,9 +31,9 @@ class SportsScreen extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              AppColors.background,
-              AppColors.lightTeal.withValues(alpha: 0.35),
-              AppColors.warmSand,
+              colors.background,
+              colors.highlight.withValues(alpha: 0.45),
+              colors.background,
             ],
           ),
         ),
@@ -45,7 +46,7 @@ class SportsScreen extends StatelessWidget {
                 Text(
                   AppStrings.appName,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: AppColors.midTeal,
+                    color: colors.action,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.4,
                   ),
@@ -55,7 +56,7 @@ class SportsScreen extends StatelessWidget {
                   'Welcome, $athleteName',
                   style: theme.textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: AppColors.darkestNavy,
+                    color: colors.onBackground,
                     height: 1.15,
                   ),
                 ),
@@ -63,7 +64,7 @@ class SportsScreen extends StatelessWidget {
                 Text(
                   'What sport would you like to practice today?',
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.7),
+                    color: colors.onBackground.withValues(alpha: 0.7),
                     height: 1.35,
                     fontWeight: FontWeight.w500,
                   ),
@@ -74,16 +75,16 @@ class SportsScreen extends StatelessWidget {
                   onTap: () => _selectSport(context, AppSport.volleyball),
                 ),
                 const SizedBox(height: 16),
-                  SportOptionCard(
-                    sport: AppSport.soccer,
-                    onTap: () => _selectSport(context, AppSport.soccer),
-                  ),
+                SportOptionCard(
+                  sport: AppSport.soccer,
+                  onTap: () => _selectSport(context, AppSport.soccer),
+                ),
                 const Spacer(flex: 3),
                 Text(
                   'You can change this anytime from Home',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.onSurface.withValues(alpha: 0.45),
+                    color: colors.onBackground.withValues(alpha: 0.45),
                   ),
                 ),
               ],

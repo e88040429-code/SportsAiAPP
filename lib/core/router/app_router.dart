@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/ai_response/ai_response_screen.dart';
+import '../../features/ai_response/ask_ai_tab_screen.dart';
 import '../../features/coach/coach_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/library/drill_detail_screen.dart';
@@ -9,7 +10,6 @@ import '../../features/library/library_screen.dart';
 import '../../features/recap/recap_screen.dart';
 import '../../features/rehab/rehab_screen.dart';
 import '../../features/sports/sports_screen.dart';
-import '../sport/app_sport.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -77,12 +77,7 @@ final GoRouter appRouter = GoRouter(
             GoRoute(
               path: '/ask',
               name: 'ask',
-              builder: (context, state) => const AiResponseScreen(
-                lockedSport: AppSport.volleyball,
-                title: 'Ask Volleyball',
-                hintText: 'Ask anything about volleyball…',
-                qaMode: true,
-              ),
+              builder: (context, state) => const AskAiTabScreen(),
             ),
           ],
         ),
@@ -145,8 +140,8 @@ class AppShell extends StatelessWidget {
             label: 'Coach',
           ),
           NavigationDestination(
-            icon: Icon(Icons.sports_volleyball_outlined),
-            selectedIcon: Icon(Icons.sports_volleyball),
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome),
             label: 'Ask AI',
           ),
           NavigationDestination(

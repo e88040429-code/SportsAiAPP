@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/sport/app_sport.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/sport_colors.dart';
 
 /// Front / back body silhouettes with attention highlights.
 class BodyHighlightSection extends StatelessWidget {
-  const BodyHighlightSection({super.key});
+  const BodyHighlightSection({super.key, required this.sport});
+
+  final AppSport sport;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = SportColors.of(sport);
+    final soccer = sport == AppSport.soccer;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -21,7 +27,9 @@ class BodyHighlightSection extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Highlighted regions need attention today',
+          soccer
+              ? 'Plant leg, hamstrings, and ankles need attention today'
+              : 'Highlighted regions need attention today',
           style: theme.textTheme.bodySmall?.copyWith(
             color: AppColors.onSurface.withValues(alpha: 0.55),
           ),
@@ -31,7 +39,7 @@ class BodyHighlightSection extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: theme.colorScheme.surface,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
@@ -48,9 +56,13 @@ class BodyHighlightSection extends StatelessWidget {
                   Expanded(
                     child: _SilhouetteCard(
                       label: 'Front',
-                      painter: const BodySilhouettePainter(
+                      painter: BodySilhouettePainter(
                         view: BodyView.front,
-                        highlightShoulders: true,
+                        highlightShoulders: !soccer,
+                        highlightHips: soccer,
+                        highlightKnees: soccer,
+                        highlightColor: colors.accent,
+                        bodyColor: colors.action,
                       ),
                     ),
                   ),
@@ -58,10 +70,13 @@ class BodyHighlightSection extends StatelessWidget {
                   Expanded(
                     child: _SilhouetteCard(
                       label: 'Back',
-                      painter: const BodySilhouettePainter(
+                      painter: BodySilhouettePainter(
                         view: BodyView.back,
-                        highlightShoulders: true,
-                        highlightUpperBack: true,
+                        highlightShoulders: !soccer,
+                        highlightUpperBack: !soccer,
+                        highlightHamstrings: soccer,
+                        highlightColor: colors.accent,
+                        bodyColor: colors.action,
                       ),
                     ),
                   ),
@@ -75,7 +90,7 @@ class BodyHighlightSection extends StatelessWidget {
                     width: 12,
                     height: 12,
                     decoration: BoxDecoration(
-                      color: AppColors.amber,
+                      color: colors.accent,
                       borderRadius: BorderRadius.circular(3),
                     ),
                   ),
@@ -133,40 +148,48 @@ enum BodyView { front, back }
 class BodySilhouettePainter extends CustomPainter {
   const BodySilhouettePainter({
     required this.view,
+    required this.highlightColor,
+    required this.bodyColor,
     this.highlightShoulders = false,
     this.highlightUpperBack = false,
+    this.highlightHips = false,
+    this.highlightKnees = false,
+    this.highlightHamstrings = false,
   });
 
   final BodyView view;
+  final Color highlightColor;
+  final Color bodyColor;
   final bool highlightShoulders;
   final bool highlightUpperBack;
+  final bool highlightHips;
+  final bool highlightKnees;
+  final bool highlightHamstrings;
 
   @override
   void paint(Canvas canvas, Size size) {
     final bodyPaint = Paint()
-      ..color = AppColors.darkTeal.withValues(alpha: 0.25)
+      ..color = bodyColor.withValues(alpha: 0.25)
       ..style = PaintingStyle.fill;
 
     final outlinePaint = Paint()
-      ..color = AppColors.darkTeal.withValues(alpha: 0.55)
+      ..color = bodyColor.withValues(alpha: 0.55)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
 
     final highlightPaint = Paint()
-      ..color = AppColors.amber
+      ..color = highlightColor
       ..style = PaintingStyle.fill;
 
     final w = size.width;
     final h = size.height;
     final cx = w / 2;
 
-    // Head
     final headCenter = Offset(cx, h * 0.10);
     final headRadius = w * 0.11;
     canvas.drawCircle(headCenter, headRadius, bodyPaint);
     canvas.drawCircle(headCenter, headRadius, outlinePaint);
 
-    // Neck
     final neck = RRect.fromRectAndRadius(
       Rect.fromCenter(
         center: Offset(cx, h * 0.18),
@@ -177,7 +200,6 @@ class BodySilhouettePainter extends CustomPainter {
     );
     canvas.drawRRect(neck, bodyPaint);
 
-    // Torso
     final torso = Path()
       ..moveTo(cx - w * 0.18, h * 0.22)
       ..lineTo(cx + w * 0.18, h * 0.22)
@@ -187,7 +209,6 @@ class BodySilhouettePainter extends CustomPainter {
     canvas.drawPath(torso, bodyPaint);
     canvas.drawPath(torso, outlinePaint);
 
-    // Arms
     final leftArm = RRect.fromRectAndRadius(
       Rect.fromLTWH(cx - w * 0.38, h * 0.24, w * 0.12, h * 0.28),
       const Radius.circular(8),
@@ -201,7 +222,6 @@ class BodySilhouettePainter extends CustomPainter {
     canvas.drawRRect(leftArm, outlinePaint);
     canvas.drawRRect(rightArm, outlinePaint);
 
-    // Legs
     final leftLeg = RRect.fromRectAndRadius(
       Rect.fromLTWH(cx - w * 0.14, h * 0.52, w * 0.11, h * 0.40),
       const Radius.circular(8),
@@ -215,13 +235,11 @@ class BodySilhouettePainter extends CustomPainter {
     canvas.drawRRect(leftLeg, outlinePaint);
     canvas.drawRRect(rightLeg, outlinePaint);
 
-    // Highlights — shoulders (both views)
     if (highlightShoulders) {
       canvas.drawCircle(Offset(cx - w * 0.22, h * 0.26), w * 0.08, highlightPaint);
       canvas.drawCircle(Offset(cx + w * 0.22, h * 0.26), w * 0.08, highlightPaint);
     }
 
-    // Upper back highlight (back view only)
     if (view == BodyView.back && highlightUpperBack) {
       final upperBack = RRect.fromRectAndRadius(
         Rect.fromCenter(
@@ -233,12 +251,40 @@ class BodySilhouettePainter extends CustomPainter {
       );
       canvas.drawRRect(upperBack, highlightPaint);
     }
+
+    if (highlightHips) {
+      canvas.drawCircle(Offset(cx - w * 0.10, h * 0.52), w * 0.07, highlightPaint);
+      canvas.drawCircle(Offset(cx + w * 0.10, h * 0.52), w * 0.07, highlightPaint);
+    }
+
+    if (highlightKnees) {
+      canvas.drawCircle(Offset(cx - w * 0.08, h * 0.72), w * 0.06, highlightPaint);
+      canvas.drawCircle(Offset(cx + w * 0.08, h * 0.72), w * 0.06, highlightPaint);
+    }
+
+    if (view == BodyView.back && highlightHamstrings) {
+      final leftHam = RRect.fromRectAndRadius(
+        Rect.fromLTWH(cx - w * 0.14, h * 0.56, w * 0.11, h * 0.18),
+        const Radius.circular(8),
+      );
+      final rightHam = RRect.fromRectAndRadius(
+        Rect.fromLTWH(cx + w * 0.03, h * 0.56, w * 0.11, h * 0.18),
+        const Radius.circular(8),
+      );
+      canvas.drawRRect(leftHam, highlightPaint);
+      canvas.drawRRect(rightHam, highlightPaint);
+    }
   }
 
   @override
   bool shouldRepaint(covariant BodySilhouettePainter oldDelegate) {
     return oldDelegate.view != view ||
         oldDelegate.highlightShoulders != highlightShoulders ||
-        oldDelegate.highlightUpperBack != highlightUpperBack;
+        oldDelegate.highlightUpperBack != highlightUpperBack ||
+        oldDelegate.highlightHips != highlightHips ||
+        oldDelegate.highlightKnees != highlightKnees ||
+        oldDelegate.highlightHamstrings != highlightHamstrings ||
+        oldDelegate.highlightColor != highlightColor ||
+        oldDelegate.bodyColor != bodyColor;
   }
 }

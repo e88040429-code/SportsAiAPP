@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/sport/app_sport.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/sport_colors.dart';
 
 class HomeUser {
   const HomeUser({required this.name, required this.greeting});
@@ -117,24 +118,24 @@ abstract final class HomeMockData {
             accent: AppColors.highlight,
           ),
         ],
-      AppSport.soccer => const [
+      AppSport.soccer => [
           SkillChip(
             id: 'power-shot',
             label: 'Power Shot',
             icon: Icons.sports_soccer,
-            accent: AppColors.primary,
+            accent: SportColors.soccer.primary,
           ),
           SkillChip(
             id: 'inside-pass',
             label: 'Inside Pass',
             icon: Icons.swipe_right,
-            accent: AppColors.action,
+            accent: SportColors.soccer.action,
           ),
           SkillChip(
             id: 'close-control',
             label: 'Close Control',
             icon: Icons.directions_run,
-            accent: AppColors.highlight,
+            accent: SportColors.soccer.highlight,
           ),
         ],
     };

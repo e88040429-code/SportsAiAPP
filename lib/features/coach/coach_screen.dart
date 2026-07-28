@@ -1,12 +1,23 @@
+import 'dart:async';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:video_player/video_player.dart';
 
+import '../../core/sport/app_sport.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/sport_colors.dart';
+import 'data/clip_analysis_session.dart';
+import 'data/clip_form_analyzer.dart';
+import 'data/clip_video_loader.dart';
 import 'data/coach_mock_data.dart';
+import 'data/model_pose_library.dart';
+import 'widgets/clip_analysis_panel.dart';
 import 'widgets/coach_camera_preview.dart';
 import 'widgets/coach_metrics_bar.dart';
 import 'widgets/cue_bubble.dart';
-import 'widgets/pose_skeleton_painter.dart';
 import 'widgets/record_button.dart';
 
 class CoachScreen extends StatefulWidget {
@@ -18,8 +29,21 @@ class CoachScreen extends StatefulWidget {
 
 class _CoachScreenState extends State<CoachScreen> {
   bool _isRecording = false;
+  bool _analyzingClip = false;
+  bool _converting = false;
+  String? _previewNote;
+
+  String? _clipName;
+  VideoPlayerController? _video;
+  SkillModelKind _modelKind = SkillModelKind.hitting;
+  ClipAnalysisResult? _analysis;
+  final _athleteDescriptionController = TextEditingController();
 
   void _onBack() {
+    if (_analyzingClip) {
+      _closeAnalysis();
+      return;
+    }
     if (context.canPop()) {
       context.pop();
     } else {
@@ -31,141 +55,326 @@ class _CoachScreenState extends State<CoachScreen> {
     setState(() => _isRecording = !_isRecording);
   }
 
+  Future<void> _importClip() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv'],
+      withData: kIsWeb,
+      allowMultiple: false,
+    );
+
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.single;
+    final name = file.name;
+    final ext = (file.extension ?? name.split('.').last).toLowerCase();
+
+    setState(() {
+      _analyzingClip = true;
+      _converting = false;
+      _clipName = name;
+      _previewNote = null;
+      _modelKind = SkillModelKind.hitting;
+      _athleteDescriptionController.clear();
+      _analysis = null;
+    });
+
+    await _disposeVideo();
+    // Load video in background — description + Generate come first.
+    unawaited(_loadVideoPreview(file, ext));
+  }
+
+  Future<void> _loadVideoPreview(PlatformFile file, String ext) async {
+    VideoPlayerController? controller;
+    try {
+      controller = await loadClipVideo(file);
+      await controller.initialize().timeout(const Duration(seconds: 4));
+      await controller.setLooping(true);
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _video = controller;
+        _previewNote = null;
+      });
+      await controller.play();
+    } catch (_) {
+      await controller?.dispose();
+      if (!mounted) return;
+      setState(() {
+        _video = null;
+        _previewNote = ext == 'mov' || ext == 'mkv'
+            ? 'Chrome can’t preview this $ext clip. You can still describe it and tap Generate.'
+            : 'Video preview isn’t available. Describe the clip below, then tap Generate.';
+      });
+    }
+  }
+
+  Future<void> _generateFeedback() async {
+    final name = _clipName;
+    if (name == null || _converting) return;
+
+    final description = _athleteDescriptionController.text.trim();
+    if (description.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add a short description of your clip first.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _converting = true);
+
+    // Brief pause so Generate feels intentional, then analyze.
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+
+    final sport = appSportController.sport;
+    final athlete = ModelPoseLibrary.athleteSequenceFromClip(
+      sport: sport,
+      kind: _modelKind,
+      clipName: '$name|$description',
+    );
+    final model = ModelPoseLibrary.modelSequence(sport, _modelKind);
+    final analysis = ClipFormAnalyzer.analyze(
+      clipName: name,
+      sport: sport,
+      kind: _modelKind,
+      athleteSeq: athlete,
+      modelSeq: model,
+    ).copyWith(athleteDescription: description);
+
+    clipAnalysisController.publish(analysis);
+
+    if (!mounted) return;
+    setState(() {
+      _analysis = analysis;
+      _converting = false;
+    });
+  }
+
+  void _onKindChanged(SkillModelKind kind) {
+    setState(() => _modelKind = kind);
+    // Don't auto-generate — athlete taps Generate again after changing skill.
+  }
+
+  void _openRecap() {
+    final description = _athleteDescriptionController.text.trim();
+    final current = _analysis;
+    if (current != null && description.isNotEmpty) {
+      final updated = current.copyWith(athleteDescription: description);
+      clipAnalysisController.publish(updated);
+      setState(() => _analysis = updated);
+    }
+    context.go('/recap');
+  }
+
+  Future<void> _closeAnalysis() async {
+    await _disposeVideo();
+    if (!mounted) return;
+    setState(() {
+      _analyzingClip = false;
+      _converting = false;
+      _clipName = null;
+      _previewNote = null;
+      _analysis = null;
+      // Keep last published result in clipAnalysisController for Recap.
+    });
+  }
+
+  Future<void> _disposeVideo() async {
+    final c = _video;
+    _video = null;
+    if (c != null) {
+      await c.dispose();
+    }
+  }
+
+  @override
+  void dispose() {
+    _athleteDescriptionController.dispose();
+    _video?.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      backgroundColor: AppColors.coachDark,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Live camera (FaceTime / front cam when available)
-          const CoachCameraPreview(),
+    return ListenableBuilder(
+      listenable: appSportController,
+      builder: (context, _) {
+        final sport = appSportController.sport;
+        final colors = SportColors.of(sport);
 
-          // Soft vignette so HUD text stays readable
-          IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    AppColors.darkestNavy.withValues(alpha: 0.60),
-                    AppColors.darkestNavy.withValues(alpha: 0.20),
-                    AppColors.darkestNavy.withValues(alpha: 0.60),
-                  ],
-                  stops: const [0.0, 0.45, 1.0],
-                ),
-              ),
+        if (_analyzingClip) {
+          return Scaffold(
+            backgroundColor: AppColors.coachDark,
+            body: ClipAnalysisPanel(
+              sport: sport,
+              kind: _modelKind,
+              clipName: _clipName ?? 'Imported clip',
+              videoController: _video,
+              previewNote: _previewNote,
+              isGenerating: _converting,
+              analysis: _analysis,
+              athleteDescriptionController: _athleteDescriptionController,
+              onKindChanged: _onKindChanged,
+              onClose: _closeAnalysis,
+              onGenerate: _generateFeedback,
+              onOpenRecap: _openRecap,
             ),
-          ),
+          );
+        }
 
-          SafeArea(
-            child: Stack(
-              children: [
-                // Pose overlay on top of the live feed (ignore so camera controls stay tappable)
-                const IgnorePointer(
-                  child: Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 48, vertical: 48),
-                      child: FakeSkeletonOverlay(),
+        return Scaffold(
+          backgroundColor: AppColors.coachDark,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Live camera only — no persistent stickman overlay
+              const CoachCameraPreview(),
+              IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AppColors.darkestNavy.withValues(alpha: 0.55),
+                        AppColors.darkestNavy.withValues(alpha: 0.12),
+                        AppColors.darkestNavy.withValues(alpha: 0.55),
+                      ],
+                      stops: const [0.0, 0.45, 1.0],
                     ),
                   ),
                 ),
-
-                // Top chrome: back + title
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          onPressed: _onBack,
-                          icon: const Icon(Icons.arrow_back),
-                          color: AppColors.onCoachDark,
-                          tooltip: 'Back',
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Live Coach',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: AppColors.onCoachDark,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const Spacer(),
-                        if (_isRecording)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
+              ),
+              SafeArea(
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              onPressed: _onBack,
+                              icon: const Icon(Icons.arrow_back),
+                              color: AppColors.onCoachDark,
+                              tooltip: 'Back',
                             ),
-                            decoration: BoxDecoration(
-                              color: AppColors.darkRed.withValues(alpha: 0.9),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.onCoachDark,
-                                    shape: BoxShape.circle,
-                                  ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Live Coach · ${sport.label}',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: AppColors.onCoachDark,
+                                  fontWeight: FontWeight.w700,
                                 ),
-                                const SizedBox(width: 6),
-                                Text(
+                              ),
+                            ),
+                            if (_isRecording)
+                              Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      AppColors.darkRed.withValues(alpha: 0.9),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
                                   'REC',
                                   style: theme.textTheme.labelSmall?.copyWith(
                                     color: AppColors.onCoachDark,
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                              ],
+                              ),
+                            FilledButton.icon(
+                              onPressed: _importClip,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: colors.action,
+                                foregroundColor: AppColors.onPrimary,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                              ),
+                              icon: const Icon(Icons.video_file_outlined, size: 18),
+                              label: const Text('Import clip'),
                             ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Cue bubble near top
-                Positioned(
-                  top: 56,
-                  left: 20,
-                  right: 20,
-                  child: CueBubble(message: CoachMockData.coachingCue),
-                ),
-
-                // Metrics + record at bottom
-                Positioned(
-                  left: 20,
-                  right: 20,
-                  bottom: 12,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CoachMetricsBar(metrics: CoachMockData.metrics),
-                      const SizedBox(height: 20),
-                      RecordButton(
-                        isRecording: _isRecording,
-                        onPressed: _toggleRecording,
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 4),
-                    ],
-                  ),
+                    ),
+                    Positioned(
+                      top: 56,
+                      left: 20,
+                      right: 20,
+                      child: CueBubble(
+                        message:
+                            '${CoachMockData.coachingCueFor(sport)} Import a clip to convert it into a stick figure and compare with a perfect model.',
+                      ),
+                    ),
+                    Positioned(
+                      left: 20,
+                      right: 20,
+                      bottom: 12,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CoachMetricsBar(
+                            metrics: CoachMockData.metricsFor(sport),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _importClip,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.onCoachDark,
+                                    side: BorderSide(
+                                      color: colors.coachLine.withValues(alpha: 0.7),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.upload_file),
+                                  label: Text(
+                                    kIsWeb
+                                        ? 'Import from desktop / files'
+                                        : 'Import from photos / files',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              RecordButton(
+                                isRecording: _isRecording,
+                                onPressed: _toggleRecording,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

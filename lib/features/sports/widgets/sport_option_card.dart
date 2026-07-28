@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/sport/app_sport.dart';
-import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/sport_colors.dart';
 
 class SportOptionCard extends StatelessWidget {
   const SportOptionCard({
@@ -16,11 +16,11 @@ class SportOptionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent =
-        sport == AppSport.volleyball ? AppColors.midTeal : AppColors.burntOrange;
+    final colors = SportColors.of(sport);
+    final accent = colors.action;
 
     return Material(
-      color: AppColors.surface,
+      color: colors.surface,
       borderRadius: BorderRadius.circular(24),
       elevation: 0,
       child: InkWell(
@@ -59,13 +59,14 @@ class SportOptionCard extends StatelessWidget {
                       sport.label,
                       style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w800,
+                        color: colors.onBackground,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       sport.tagline,
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppColors.onSurface.withValues(alpha: 0.6),
+                        color: colors.onBackground.withValues(alpha: 0.6),
                         height: 1.3,
                       ),
                     ),
@@ -81,7 +82,7 @@ class SportOptionCard extends StatelessWidget {
                 ),
                 child: const Icon(
                   Icons.arrow_forward,
-                  color: AppColors.onPrimary,
+                  color: Colors.white,
                   size: 20,
                 ),
               ),

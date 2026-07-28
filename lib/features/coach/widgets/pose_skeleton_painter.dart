@@ -1,35 +1,68 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/app_colors.dart';
+import '../../../core/sport/app_sport.dart';
+import '../../../core/theme/sport_colors.dart';
 
 /// Draws a fake 17-joint pose skeleton (COCO-style) for the Live Coach HUD.
 class PoseSkeletonPainter extends CustomPainter {
-  const PoseSkeletonPainter();
+  const PoseSkeletonPainter({
+    required this.joints,
+    required this.lineColor,
+    required this.jointColor,
+  });
 
-  /// Normalized joint positions in a volleyball follow-through stance.
-  /// Order: nose, L/R eye, L/R ear, L/R shoulder, L/R elbow, L/R wrist,
-  /// L/R hip, L/R knee, L/R ankle.
-  static const List<Offset> _normalizedJoints = [
-    Offset(0.50, 0.12), // 0 nose
-    Offset(0.46, 0.10), // 1 left eye
-    Offset(0.54, 0.10), // 2 right eye
-    Offset(0.42, 0.12), // 3 left ear
-    Offset(0.58, 0.12), // 4 right ear
-    Offset(0.38, 0.24), // 5 left shoulder
-    Offset(0.62, 0.24), // 6 right shoulder
-    Offset(0.28, 0.36), // 7 left elbow
-    Offset(0.78, 0.18), // 8 right elbow (raised)
-    Offset(0.22, 0.48), // 9 left wrist
-    Offset(0.88, 0.08), // 10 right wrist (follow-through)
-    Offset(0.42, 0.48), // 11 left hip
-    Offset(0.58, 0.48), // 12 right hip
-    Offset(0.40, 0.68), // 13 left knee
-    Offset(0.60, 0.68), // 14 right knee
-    Offset(0.38, 0.88), // 15 left ankle
-    Offset(0.62, 0.88), // 16 right ankle
+  final List<Offset> joints;
+  final Color lineColor;
+  final Color jointColor;
+
+  /// Volleyball follow-through stance.
+  static const List<Offset> volleyballJoints = [
+    Offset(0.50, 0.12),
+    Offset(0.46, 0.10),
+    Offset(0.54, 0.10),
+    Offset(0.42, 0.12),
+    Offset(0.58, 0.12),
+    Offset(0.38, 0.24),
+    Offset(0.62, 0.24),
+    Offset(0.28, 0.36),
+    Offset(0.78, 0.18),
+    Offset(0.22, 0.48),
+    Offset(0.88, 0.08),
+    Offset(0.42, 0.48),
+    Offset(0.58, 0.48),
+    Offset(0.40, 0.68),
+    Offset(0.60, 0.68),
+    Offset(0.38, 0.88),
+    Offset(0.62, 0.88),
   ];
 
-  static const List<(int, int)> _bones = [
+  /// Soccer strike / follow-through stance (plant left, kick right).
+  static const List<Offset> soccerJoints = [
+    Offset(0.48, 0.11),
+    Offset(0.44, 0.09),
+    Offset(0.52, 0.09),
+    Offset(0.40, 0.11),
+    Offset(0.56, 0.11),
+    Offset(0.36, 0.24),
+    Offset(0.60, 0.24),
+    Offset(0.30, 0.38),
+    Offset(0.68, 0.36),
+    Offset(0.26, 0.50),
+    Offset(0.74, 0.48),
+    Offset(0.40, 0.50),
+    Offset(0.56, 0.50),
+    Offset(0.38, 0.70), // plant knee
+    Offset(0.72, 0.62), // strike knee raised
+    Offset(0.36, 0.90), // plant ankle
+    Offset(0.86, 0.78), // strike ankle follow-through
+  ];
+
+  static List<Offset> jointsFor(AppSport sport) => switch (sport) {
+        AppSport.volleyball => volleyballJoints,
+        AppSport.soccer => soccerJoints,
+      };
+
+  static const List<(int, int)> bones = [
     (0, 1),
     (0, 2),
     (1, 3),
@@ -53,37 +86,40 @@ class PoseSkeletonPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final linePaint = Paint()
-      ..color = AppColors.midTeal
+      ..color = lineColor
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
 
     final jointPaint = Paint()
-      ..color = AppColors.midTeal
+      ..color = lineColor
       ..style = PaintingStyle.fill;
 
     final jointRingPaint = Paint()
-      ..color = AppColors.darkTeal
+      ..color = jointColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
-    final joints = [
-      for (final p in _normalizedJoints)
-        Offset(p.dx * size.width, p.dy * size.height),
+    final scaled = [
+      for (final p in joints) Offset(p.dx * size.width, p.dy * size.height),
     ];
 
-    for (final (a, b) in _bones) {
-      canvas.drawLine(joints[a], joints[b], linePaint);
+    for (final (a, b) in bones) {
+      canvas.drawLine(scaled[a], scaled[b], linePaint);
     }
 
-    for (final joint in joints) {
+    for (final joint in scaled) {
       canvas.drawCircle(joint, 5, jointPaint);
       canvas.drawCircle(joint, 7, jointRingPaint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant PoseSkeletonPainter oldDelegate) => false;
+  bool shouldRepaint(covariant PoseSkeletonPainter oldDelegate) {
+    return oldDelegate.lineColor != lineColor ||
+        oldDelegate.jointColor != jointColor ||
+        oldDelegate.joints != joints;
+  }
 }
 
 class FakeSkeletonOverlay extends StatelessWidget {
@@ -91,15 +127,25 @@ class FakeSkeletonOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    // Wide desktop → landscape skeleton; phones stay portrait.
-    final aspect = width >= 900 ? 16 / 10 : 9 / 16;
+    return ListenableBuilder(
+      listenable: appSportController,
+      builder: (context, _) {
+        final sport = appSportController.sport;
+        final colors = SportColors.of(sport);
+        final width = MediaQuery.sizeOf(context).width;
+        final aspect = width >= 900 ? 16 / 10 : 9 / 16;
 
-    return AspectRatio(
-      aspectRatio: aspect,
-      child: const CustomPaint(
-        painter: PoseSkeletonPainter(),
-      ),
+        return AspectRatio(
+          aspectRatio: aspect,
+          child: CustomPaint(
+            painter: PoseSkeletonPainter(
+              joints: PoseSkeletonPainter.jointsFor(sport),
+              lineColor: colors.coachLine,
+              jointColor: colors.coachJoint,
+            ),
+          ),
+        );
+      },
     );
   }
 }

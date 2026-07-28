@@ -1,14 +1,29 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/app_colors.dart';
+import '../../../core/sport/app_sport.dart';
+import '../../../core/theme/sport_colors.dart';
 import 'recap_skeleton_painter.dart';
 
 class YouVsCoachSection extends StatelessWidget {
-  const YouVsCoachSection({super.key});
+  const YouVsCoachSection({
+    super.key,
+    required this.sport,
+    this.athleteJoints,
+    this.coachJoints,
+    this.youLabel = 'You',
+    this.coachLabel = 'Coach',
+  });
+
+  final AppSport sport;
+  final List<Offset>? athleteJoints;
+  final List<Offset>? coachJoints;
+  final String youLabel;
+  final String coachLabel;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = SportColors.of(sport);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -24,19 +39,21 @@ class YouVsCoachSection extends StatelessWidget {
           children: [
             Expanded(
               child: _PoseCard(
-                label: 'You',
-                joints: RecapSkeletonPainter.athleteJoints,
-                skeletonColor: AppColors.burntOrange,
-                labelColor: AppColors.burntOrange,
+                label: youLabel,
+                joints: athleteJoints ??
+                    RecapSkeletonPainter.athleteJointsFor(sport),
+                skeletonColor: colors.primary,
+                labelColor: colors.primary,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _PoseCard(
-                label: 'Coach',
-                joints: RecapSkeletonPainter.coachJoints,
-                skeletonColor: AppColors.midTeal,
-                labelColor: AppColors.midTeal,
+                label: coachLabel,
+                joints:
+                    coachJoints ?? RecapSkeletonPainter.coachJointsFor(sport),
+                skeletonColor: colors.action,
+                labelColor: colors.action,
               ),
             ),
           ],
@@ -62,11 +79,12 @@ class _PoseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final onBg = theme.colorScheme.onSurface;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -82,7 +100,7 @@ class _PoseCard extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.darkestNavy.withValues(alpha: 0.04),
+              color: onBg.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(16),
             ),
             child: RecapSkeletonFrame(
@@ -93,6 +111,9 @@ class _PoseCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w700,
               color: labelColor,

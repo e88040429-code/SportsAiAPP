@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../../../core/config/ai_config.dart';
 import '../../../core/sport/app_sport.dart';
+import '../../coach/data/clip_analysis_session.dart';
 import '../data/ai_response_mock_data.dart';
 import 'coach_agent_prompt.dart';
 
@@ -13,6 +14,12 @@ class CoachAiAgent {
   CoachAiAgent({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
+
+  String? get _clipContext {
+    final analysis = clipAnalysisController.latest;
+    if (analysis == null) return null;
+    return analysis.aiContextBlock;
+  }
 
   /// Sends the latest user message plus prior history to the model.
   Future<CoachAgentReply> respond({
@@ -73,7 +80,11 @@ class CoachAiAgent {
     final uri = Uri.parse('${AiConfig.proxyUrl}/v1/coach');
     final payload = {
       'sport': sport.name,
-      'system': CoachAgentPrompt.systemFor(sport, qaMode: qaMode),
+      'system': CoachAgentPrompt.systemFor(
+        sport,
+        qaMode: qaMode,
+        clipContext: _clipContext,
+      ),
       'model': AiConfig.geminiModel,
       'messages': [
         for (final m in history)
@@ -142,7 +153,13 @@ class CoachAiAgent {
           body: jsonEncode({
             'systemInstruction': {
               'parts': [
-                {'text': CoachAgentPrompt.systemFor(sport, qaMode: qaMode)},
+                {
+                  'text': CoachAgentPrompt.systemFor(
+                    sport,
+                    qaMode: qaMode,
+                    clipContext: _clipContext,
+                  ),
+                },
               ],
             },
             'contents': contents,

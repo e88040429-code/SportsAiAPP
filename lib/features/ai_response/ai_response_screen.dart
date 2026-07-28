@@ -42,9 +42,12 @@ class _AiResponseScreenState extends State<AiResponseScreen> {
   AppSport get _sport => widget.lockedSport ?? appSportController.sport;
 
   String get _welcome {
-    if (widget.qaMode && _sport == AppSport.volleyball) {
-      return 'Ask me anything about volleyball — spikes, serves, setting, '
-          'defense, footwork, timing, or recovery. What do you want to know?';
+    if (widget.qaMode) {
+      return _sport == AppSport.soccer
+          ? 'Ask me anything about soccer — shooting, passing, first touch, '
+              'dribbling, defending, or recovery. What do you want to know?'
+          : 'Ask me anything about volleyball — spikes, serves, setting, '
+              'defense, footwork, timing, or recovery. What do you want to know?';
     }
     return CoachAgentPrompt.welcomeFor(_sport);
   }

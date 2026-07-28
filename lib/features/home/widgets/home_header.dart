@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/sport/app_sport.dart';
-import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/sport_colors.dart';
 import '../data/home_mock_data.dart';
 
 class HomeHeader extends StatelessWidget {
@@ -18,6 +18,7 @@ class HomeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colors = SportColors.of(sport);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -31,7 +32,7 @@ class HomeHeader extends StatelessWidget {
                   Text(
                     '${user.greeting},',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppColors.onSurface.withValues(alpha: 0.6),
+                      color: colors.onBackground.withValues(alpha: 0.6),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -48,18 +49,18 @@ class HomeHeader extends StatelessWidget {
               tooltip: 'AI Coach',
               onPressed: () => context.push('/ai'),
               style: IconButton.styleFrom(
-                backgroundColor: AppColors.midTeal.withValues(alpha: 0.12),
+                backgroundColor: colors.action.withValues(alpha: 0.12),
               ),
-              icon: const Icon(Icons.auto_awesome, color: AppColors.midTeal),
+              icon: Icon(Icons.auto_awesome, color: colors.action),
             ),
             const SizedBox(width: 8),
             CircleAvatar(
               radius: 24,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+              backgroundColor: colors.primary.withValues(alpha: 0.15),
               child: Text(
                 user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
                 style: theme.textTheme.titleMedium?.copyWith(
-                  color: AppColors.primary,
+                  color: colors.primary,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -68,7 +69,7 @@ class HomeHeader extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         Material(
-          color: AppColors.surface,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(16),
           child: InkWell(
             onTap: () => context.push('/sports'),
@@ -78,12 +79,12 @@ class HomeHeader extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: AppColors.midTeal.withValues(alpha: 0.25),
+                  color: colors.action.withValues(alpha: 0.25),
                 ),
               ),
               child: Row(
                 children: [
-                  Icon(sport.icon, color: AppColors.midTeal, size: 22),
+                  Icon(sport.icon, color: colors.action, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -92,7 +93,7 @@ class HomeHeader extends StatelessWidget {
                         Text(
                           'Training sport',
                           style: theme.textTheme.labelSmall?.copyWith(
-                            color: AppColors.onSurface.withValues(alpha: 0.55),
+                            color: colors.onBackground.withValues(alpha: 0.55),
                           ),
                         ),
                         Text(
@@ -107,14 +108,14 @@ class HomeHeader extends StatelessWidget {
                   Text(
                     'Change',
                     style: theme.textTheme.labelLarge?.copyWith(
-                      color: AppColors.burntOrange,
+                      color: colors.primary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(width: 4),
-                  const Icon(
+                  Icon(
                     Icons.chevron_right,
-                    color: AppColors.burntOrange,
+                    color: colors.primary,
                     size: 20,
                   ),
                 ],

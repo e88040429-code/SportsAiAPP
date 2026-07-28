@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/sport/app_sport.dart';
 import 'data/rehab_mock_data.dart';
 import 'widgets/active_program_card.dart';
 import 'widgets/body_highlight_section.dart';
@@ -16,6 +17,22 @@ class RehabScreen extends StatefulWidget {
 
 class _RehabScreenState extends State<RehabScreen> {
   final Set<String> _completedIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    appSportController.addListener(_onSportChanged);
+  }
+
+  @override
+  void dispose() {
+    appSportController.removeListener(_onSportChanged);
+    super.dispose();
+  }
+
+  void _onSportChanged() {
+    setState(() => _completedIds.clear());
+  }
 
   void _toggleExercise(String id) {
     setState(() {
@@ -39,6 +56,7 @@ class _RehabScreenState extends State<RehabScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final sport = appSportController.sport;
 
     return Scaffold(
       body: SafeArea(
@@ -55,23 +73,27 @@ class _RehabScreenState extends State<RehabScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Recovery readiness and daily rehab plan',
+                sport == AppSport.soccer
+                    ? 'Lower-body recovery for match readiness'
+                    : 'Recovery readiness and daily rehab plan',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
               ),
               const SizedBox(height: 20),
-              const ReadinessCard(
-                percent: RehabMockData.readinessPercent,
-                message: RehabMockData.readinessMessage,
+              ReadinessCard(
+                percent: RehabMockData.readinessPercentFor(sport),
+                message: RehabMockData.readinessMessageFor(sport),
               ),
               const SizedBox(height: 28),
-              const BodyHighlightSection(),
+              BodyHighlightSection(sport: sport),
               const SizedBox(height: 28),
-              const ActiveProgramCard(program: RehabMockData.activeProgram),
+              ActiveProgramCard(
+                program: RehabMockData.activeProgramFor(sport),
+              ),
               const SizedBox(height: 28),
               TodaysExercisesChecklist(
-                exercises: RehabMockData.todaysExercises,
+                exercises: RehabMockData.todaysExercisesFor(sport),
                 completedIds: _completedIds,
                 onToggle: _toggleExercise,
               ),

@@ -4,9 +4,16 @@ import '../../../core/theme/app_colors.dart';
 import '../data/recap_mock_data.dart';
 
 class RepBarChart extends StatelessWidget {
-  const RepBarChart({super.key, required this.reps});
+  const RepBarChart({
+    super.key,
+    required this.reps,
+    this.title = 'Rep Quality',
+    this.subtitle = 'Form score by rep this session',
+  });
 
   final List<RepScore> reps;
+  final String title;
+  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -16,14 +23,14 @@ class RepBarChart extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Rep Quality',
+          title,
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 4),
         Text(
-          'Form score by rep this session',
+          subtitle,
           style: theme.textTheme.bodySmall?.copyWith(
             color: AppColors.onSurface.withValues(alpha: 0.55),
           ),

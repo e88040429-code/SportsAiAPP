@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/sport/app_sport.dart';
+
 /// 17-joint COCO-style skeleton for Recap comparison cards.
 class RecapSkeletonPainter extends CustomPainter {
   const RecapSkeletonPainter({
@@ -32,7 +34,7 @@ class RecapSkeletonPainter extends CustomPainter {
   ];
 
   /// Athlete pose — elbow slightly lower on the follow-through.
-  static const List<Offset> athleteJoints = [
+  static const List<Offset> volleyballAthleteJoints = [
     Offset(0.50, 0.12),
     Offset(0.46, 0.10),
     Offset(0.54, 0.10),
@@ -53,7 +55,7 @@ class RecapSkeletonPainter extends CustomPainter {
   ];
 
   /// Coach reference pose — higher elbow / cleaner extension.
-  static const List<Offset> coachJoints = [
+  static const List<Offset> volleyballCoachJoints = [
     Offset(0.50, 0.12),
     Offset(0.46, 0.10),
     Offset(0.54, 0.10),
@@ -72,6 +74,58 @@ class RecapSkeletonPainter extends CustomPainter {
     Offset(0.38, 0.88),
     Offset(0.62, 0.88),
   ];
+
+  /// Soccer athlete — plant a bit behind, strike leg short of full extension.
+  static const List<Offset> soccerAthleteJoints = [
+    Offset(0.48, 0.11),
+    Offset(0.44, 0.09),
+    Offset(0.52, 0.09),
+    Offset(0.40, 0.11),
+    Offset(0.56, 0.11),
+    Offset(0.36, 0.24),
+    Offset(0.60, 0.24),
+    Offset(0.30, 0.38),
+    Offset(0.66, 0.38),
+    Offset(0.26, 0.50),
+    Offset(0.70, 0.50),
+    Offset(0.40, 0.50),
+    Offset(0.56, 0.50),
+    Offset(0.38, 0.70),
+    Offset(0.68, 0.66),
+    Offset(0.36, 0.90),
+    Offset(0.78, 0.84),
+  ];
+
+  /// Soccer coach — cleaner plant and longer strike follow-through.
+  static const List<Offset> soccerCoachJoints = [
+    Offset(0.48, 0.11),
+    Offset(0.44, 0.09),
+    Offset(0.52, 0.09),
+    Offset(0.40, 0.11),
+    Offset(0.56, 0.11),
+    Offset(0.36, 0.24),
+    Offset(0.60, 0.24),
+    Offset(0.30, 0.38),
+    Offset(0.68, 0.36),
+    Offset(0.26, 0.50),
+    Offset(0.74, 0.48),
+    Offset(0.40, 0.50),
+    Offset(0.56, 0.50),
+    Offset(0.38, 0.70),
+    Offset(0.72, 0.62),
+    Offset(0.36, 0.90),
+    Offset(0.86, 0.78),
+  ];
+
+  static List<Offset> athleteJointsFor(AppSport sport) => switch (sport) {
+        AppSport.volleyball => volleyballAthleteJoints,
+        AppSport.soccer => soccerAthleteJoints,
+      };
+
+  static List<Offset> coachJointsFor(AppSport sport) => switch (sport) {
+        AppSport.volleyball => volleyballCoachJoints,
+        AppSport.soccer => soccerCoachJoints,
+      };
 
   @override
   void paint(Canvas canvas, Size size) {
