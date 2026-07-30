@@ -14,7 +14,14 @@ class SportsScreen extends StatelessWidget {
 
   void _selectSport(BuildContext context, AppSport sport) {
     appSportController.select(sport);
-    context.go('/home');
+    final pending = appSportController.takePendingDeepLink();
+    final target = (pending != null &&
+            pending.isNotEmpty &&
+            pending != '/sports' &&
+            !pending.startsWith('/sports?'))
+        ? pending
+        : '/home';
+    context.go(target);
   }
 
   @override

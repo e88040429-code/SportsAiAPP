@@ -7,10 +7,12 @@ import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/sport/app_sport.dart';
+import '../../core/sport/shell_tab_scope.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/sport_colors.dart';
 import 'data/clip_analysis_session.dart';
 import 'data/clip_form_analyzer.dart';
+import 'data/clip_import_validator.dart';
 import 'data/clip_video_loader.dart';
 import 'data/coach_mock_data.dart';
 import 'data/model_pose_library.dart';
@@ -31,6 +33,7 @@ class _CoachScreenState extends State<CoachScreen> {
   bool _isRecording = false;
   bool _analyzingClip = false;
   bool _converting = false;
+  bool _tabActive = false;
   String? _previewNote;
 
   String? _clipName;
@@ -39,10 +42,26 @@ class _CoachScreenState extends State<CoachScreen> {
   ClipAnalysisResult? _analysis;
   final _athleteDescriptionController = TextEditingController();
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final index = ShellTabScope.indexOf(context);
+    final active = index == kCoachShellBranchIndex;
+    if (active == _tabActive) return;
+    _tabActive = active;
+    if (!active && _isRecording) {
+      // Leaving Coach mid-record stops the session UI state.
+      setState(() => _isRecording = false);
+    }
+  }
+
   void _onBack() {
     if (_analyzingClip) {
       _closeAnalysis();
       return;
+    }
+    if (_isRecording) {
+      setState(() => _isRecording = false);
     }
     if (context.canPop()) {
       context.pop();
@@ -58,13 +77,26 @@ class _CoachScreenState extends State<CoachScreen> {
   Future<void> _importClip() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv'],
-      withData: kIsWeb,
+      allowedExtensions: kAllowedClipExtensions.toList(growable: false),
+      withData: kIsWeb, // Web needs bytes to sniff; avoid loading whole clips on mobile.
       allowMultiple: false,
     );
 
     if (result == null || result.files.isEmpty) return;
     final file = result.files.single;
+
+    final rejection = ClipImportValidator.validate(file);
+    if (rejection != null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(rejection),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     final name = file.name;
     final ext = (file.extension ?? name.split('.').last).toLowerCase();
 

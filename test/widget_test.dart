@@ -1,7 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:setpoint_ai/app.dart';
+import 'package:setpoint_ai/core/router/app_router.dart';
+import 'package:setpoint_ai/core/sport/app_sport.dart';
 
 Future<void> _enterAppAsVolleyball(WidgetTester tester) async {
+  appSportController.debugReset();
   await tester.pumpWidget(const SetPointApp());
   await tester.pumpAndSettle();
 
@@ -12,6 +15,11 @@ Future<void> _enterAppAsVolleyball(WidgetTester tester) async {
 }
 
 void main() {
+  setUp(() {
+    appSportController.debugReset();
+    appRouter.go('/sports');
+  });
+
   testWidgets('Welcome screen asks Emma to pick a sport', (tester) async {
     await tester.pumpWidget(const SetPointApp());
     await tester.pumpAndSettle();
@@ -23,6 +31,32 @@ void main() {
     );
     expect(find.text('Volleyball'), findsOneWidget);
     expect(find.text('Soccer'), findsOneWidget);
+  });
+
+  testWidgets('Deep link to Coach without sport redirects to welcome',
+      (tester) async {
+    await tester.pumpWidget(const SetPointApp());
+    await tester.pumpAndSettle();
+
+    appRouter.go('/coach');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Welcome, Emma'), findsOneWidget);
+    expect(find.textContaining('Live Coach'), findsNothing);
+  });
+
+  testWidgets('Deep link to Coach resumes after sport pick', (tester) async {
+    await tester.pumpWidget(const SetPointApp());
+    await tester.pumpAndSettle();
+
+    appRouter.go('/coach');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Welcome, Emma'), findsOneWidget);
+
+    await tester.tap(find.text('Volleyball'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Live Coach'), findsOneWidget);
   });
 
   testWidgets('Picking a sport opens the Home dashboard', (tester) async {
@@ -90,6 +124,6 @@ void main() {
     await tester.tap(find.text('Start Drill'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Live Coach'), findsOneWidget);
+    expect(find.textContaining('Live Coach'), findsOneWidget);
   });
 }

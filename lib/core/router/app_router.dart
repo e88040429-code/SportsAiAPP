@@ -10,12 +10,28 @@ import '../../features/library/library_screen.dart';
 import '../../features/recap/recap_screen.dart';
 import '../../features/rehab/rehab_screen.dart';
 import '../../features/sports/sports_screen.dart';
+import '../sport/app_sport.dart';
+import '../sport/shell_tab_scope.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final GoRouter appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
   initialLocation: '/sports',
+  refreshListenable: appSportController,
+  redirect: (context, state) {
+    final onSports = state.matchedLocation == '/sports';
+    if (appSportController.hasSelectedSport || onSports) {
+      return null;
+    }
+
+    // Cold start / hard refresh deep link before welcome — park the target.
+    final path = state.uri.path;
+    if (path.isNotEmpty && path != '/') {
+      appSportController.pendingDeepLink = state.uri.toString();
+    }
+    return '/sports';
+  },
   routes: [
     GoRoute(
       parentNavigatorKey: _rootNavigatorKey,
@@ -118,43 +134,46 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: navigationShell,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: _onDestinationSelected,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.video_library_outlined),
-            selectedIcon: Icon(Icons.video_library),
-            label: 'Library',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.videocam_outlined),
-            selectedIcon: Icon(Icons.videocam),
-            label: 'Coach',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.auto_awesome_outlined),
-            selectedIcon: Icon(Icons.auto_awesome),
-            label: 'Ask AI',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            selectedIcon: Icon(Icons.insights),
-            label: 'Recap',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.healing_outlined),
-            selectedIcon: Icon(Icons.healing),
-            label: 'Rehab',
-          ),
-        ],
+    return ShellTabScope(
+      currentIndex: navigationShell.currentIndex,
+      child: Scaffold(
+        body: navigationShell,
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: navigationShell.currentIndex,
+          onDestinationSelected: _onDestinationSelected,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
+              label: 'Home',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.video_library_outlined),
+              selectedIcon: Icon(Icons.video_library),
+              label: 'Library',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.videocam_outlined),
+              selectedIcon: Icon(Icons.videocam),
+              label: 'Coach',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.auto_awesome_outlined),
+              selectedIcon: Icon(Icons.auto_awesome),
+              label: 'Ask AI',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.insights_outlined),
+              selectedIcon: Icon(Icons.insights),
+              label: 'Recap',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.healing_outlined),
+              selectedIcon: Icon(Icons.healing),
+              label: 'Rehab',
+            ),
+          ],
+        ),
       ),
     );
   }
