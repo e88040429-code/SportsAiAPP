@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:pose_detection/pose_detection.dart';
 
+import '../../../core/sport/shell_tab_scope.dart';
 import '../../../core/theme/app_colors.dart';
 import '../pose/live_pose_overlay.dart';
 import '../pose/pose_frame.dart';
@@ -39,12 +40,11 @@ class CameraStreamFrame {
 
 /// Live device camera feed for the Coach HUD (web + mobile).
 ///
-/// Supports lens flip when multiple cameras exist, plus a wide zoom range
-/// (pinch + on-screen controls). Falls back to a dark placeholder if unavailable.
+/// Zoom is digital crop-in only (min 1x = full frame). Zooming out past the
+/// fitted frame is disabled so you never get empty letterbox “zoom”.
 ///
-/// When [poseEnabled] is true, frames are forwarded for pose detection:
-/// - **Web:** throttled JPEG snapshots via [onJpegFrame]
-/// - **Mobile/desktop:** [CameraImage] stream via [onStreamFrame] when supported
+/// Camera only starts while the Coach bottom-nav tab is active — the shell uses
+/// an IndexedStack, so this widget can stay mounted on other tabs.
 class CoachCameraPreview extends StatefulWidget {
   const CoachCameraPreview({
     super.key,
@@ -76,19 +76,24 @@ class CoachCameraPreview extends StatefulWidget {
 
 class _CoachCameraPreviewState extends State<CoachCameraPreview>
     with WidgetsBindingObserver {
-  static const double _minZoom = 0.25;
-  static const double _maxZoom = 5.0;
-  static const Duration _webCaptureInterval = Duration(milliseconds: 150);
+  /// 1x = full camera frame fitted in the window. No zoom-out below that.
+  static const double _fitZoom = 1.0;
+  static const double _defaultMaxZoom = 3.0;
 
   CameraController? _controller;
   List<CameraDescription> _cameras = const [];
   int _cameraIndex = 0;
 
   String? _errorMessage;
-  bool _initializing = true;
+  bool _permissionBlocked = false;
+  bool _initializing = false;
+  bool _tabActive = false;
 
-  double _zoom = 1.0;
-  double _pinchBaseZoom = 1.0;
+  double _zoom = _fitZoom;
+  double _minZoom = _fitZoom;
+  double _maxZoom = _defaultMaxZoom;
+  double _pinchBaseZoom = _fitZoom;
+  bool _useHardwareZoom = false;
 
   Timer? _webCaptureTimer;
   bool _capturingJpeg = false;
@@ -103,7 +108,20 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _bootstrap();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final index = ShellTabScope.indexOf(context);
+    final active = index == kCoachShellBranchIndex;
+    if (active == _tabActive) return;
+    _tabActive = active;
+    if (active) {
+      _bootstrap();
+    } else {
+      _releaseCamera();
+    }
   }
 
   @override
@@ -130,8 +148,13 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_tabActive) return;
+
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) {
+      if (state == AppLifecycleState.resumed) {
+        _bootstrap();
+      }
       return;
     }
 
@@ -149,19 +172,34 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
     }
   }
 
+  Future<void> _releaseCamera() async {
+    final previous = _controller;
+    _controller = null;
+    if (mounted) {
+      setState(() {
+        _initializing = false;
+        // Keep last error so returning to Coach still explains a block.
+      });
+    }
+    await previous?.dispose();
+  }
+
   Future<void> _bootstrap() async {
+    if (!_tabActive) return;
+
     setState(() {
       _initializing = true;
-      _errorMessage = null;
+      // Keep prior permission copy until a new result arrives.
     });
 
     try {
       final cameras = await availableCameras();
-      if (!mounted) return;
+      if (!mounted || !_tabActive) return;
 
       if (cameras.isEmpty) {
         setState(() {
           _initializing = false;
+          _permissionBlocked = false;
           _errorMessage = 'No camera found on this device.';
         });
         return;
@@ -174,15 +212,13 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
       _cameraIndex = frontIndex >= 0 ? frontIndex : 0;
       await _openCamera(cameras[_cameraIndex]);
     } on CameraException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _initializing = false;
-        _errorMessage = _messageForCameraException(e);
-      });
+      if (!mounted || !_tabActive) return;
+      _applyCameraFailure(e);
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || !_tabActive) return;
       setState(() {
         _initializing = false;
+        _permissionBlocked = false;
         _errorMessage =
             'Camera unavailable. Allow camera access and try again.';
       });
@@ -190,9 +226,10 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   }
 
   Future<void> _openCamera(CameraDescription camera) async {
+    if (!_tabActive) return;
+
     setState(() {
       _initializing = true;
-      _errorMessage = null;
     });
 
     await _stopPoseFeed();
@@ -213,7 +250,7 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
 
     try {
       await controller.initialize();
-      if (!mounted) {
+      if (!mounted || !_tabActive) {
         await controller.dispose();
         return;
       }
@@ -222,38 +259,49 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
       // Helps web release the previous MediaStream before opening another.
       await Future<void>.delayed(const Duration(milliseconds: 80));
 
-      if (!mounted) {
+      if (!mounted || !_tabActive) {
         await controller.dispose();
         return;
       }
 
+      var minZoom = _fitZoom;
+      var maxZoom = _defaultMaxZoom;
+      var useHardware = false;
+
+      try {
+        final hwMin = await controller.getMinZoomLevel();
+        final hwMax = await controller.getMaxZoomLevel();
+        // Only use hardware zoom when the device actually offers a range.
+        if (hwMax > hwMin + 0.01) {
+          minZoom = hwMin;
+          maxZoom = hwMax;
+          useHardware = true;
+          await controller.setZoomLevel(hwMin);
+        }
+      } catch (_) {
+        // Web / unsupported — digital crop-in from 1x.
+      }
+
       setState(() {
         _controller = controller;
-        _zoom = 1.0;
+        _minZoom = useHardware ? minZoom : _fitZoom;
+        _maxZoom = useHardware ? maxZoom : _defaultMaxZoom;
+        _useHardwareZoom = useHardware;
+        _zoom = _minZoom;
         _initializing = false;
+        _errorMessage = null;
+        _permissionBlocked = false;
       });
-
-      // Best-effort hardware zoom reset on mobile; ignored on web if unsupported.
-      try {
-        final min = await controller.getMinZoomLevel();
-        await controller.setZoomLevel(min);
-      } catch (_) {}
-
-      if (widget.poseEnabled) {
-        await _startPoseFeed();
-      }
     } on CameraException catch (e) {
       await controller.dispose();
-      if (!mounted) return;
-      setState(() {
-        _initializing = false;
-        _errorMessage = _messageForCameraException(e);
-      });
+      if (!mounted || !_tabActive) return;
+      _applyCameraFailure(e);
     } catch (_) {
       await controller.dispose();
-      if (!mounted) return;
+      if (!mounted || !_tabActive) return;
       setState(() {
         _initializing = false;
+        _permissionBlocked = false;
         _errorMessage =
             'Camera unavailable. Allow camera access and try again.';
       });
@@ -432,29 +480,81 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
     setState(() => _zoom = value.clamp(_minZoom, _maxZoom));
   }
 
-  void _nudgeZoom(double delta) => _setZoom(_zoom + delta);
-
-  String _messageForCameraException(CameraException e) {
+  bool _isPermissionDenial(CameraException e) {
     switch (e.code) {
       case 'CameraAccessDenied':
       case 'CameraAccessDeniedWithoutPrompt':
       case 'CameraAccessRestricted':
       case 'permissionDenied':
-        return 'Camera permission denied. Allow access in browser or system settings.';
+      case 'SecurityError':
+        return true;
+      default:
+        final desc = (e.description ?? '').toLowerCase();
+        return desc.contains('permission') ||
+            desc.contains('not allowed') ||
+            desc.contains('denied');
+    }
+  }
+
+  String _permissionBlockedMessage() {
+    if (kIsWeb) {
+      return 'Camera is blocked for this site. Chrome won’t ask again until you allow it in site settings.';
+    }
+    return 'Camera permission denied. Allow access in system settings, then tap Try again.';
+  }
+
+  String _messageForCameraException(CameraException e) {
+    switch (e.code) {
       case 'cameraNotReadable':
-        return 'Camera is in use by another app. Close FaceTime or other camera apps and retry.';
+        return 'Camera is in use by another app. Close other camera apps and retry.';
       default:
         return e.description ?? 'Could not open the camera.';
     }
   }
 
+  Future<void> _flipCamera() async {
+    if (_cameras.length < 2 || _initializing) return;
+    final next = (_cameraIndex + 1) % _cameras.length;
+    _cameraIndex = next;
+    await _openCamera(_cameras[next]);
+  }
+
+  Future<void> _setZoom(double value) async {
+    final next = value.clamp(_minZoom, _maxZoom);
+    if ((next - _zoom).abs() < 0.001) return;
+
+    setState(() => _zoom = next);
+
+    if (_useHardwareZoom) {
+      final controller = _controller;
+      if (controller == null || !controller.value.isInitialized) return;
+      try {
+        await controller.setZoomLevel(next);
+      } catch (_) {
+        // Keep UI zoom; hardware may reject edge values.
+      }
+    }
+  }
+
+  void _nudgeZoom(double delta) => _setZoom(_zoom + delta);
+
   @override
   Widget build(BuildContext context) {
+    if (!_tabActive) {
+      return const ColoredBox(color: AppColors.coachDark);
+    }
+
     if (_initializing) {
+      // Static placeholder (not CircularProgressIndicator) so IndexedStack
+      // offstage ticks don't block widget-test pumpAndSettle.
       return const ColoredBox(
         color: AppColors.coachDark,
         child: Center(
-          child: CircularProgressIndicator(color: AppColors.midTeal),
+          child: Icon(
+            Icons.videocam_outlined,
+            size: 40,
+            color: AppColors.midTeal,
+          ),
         ),
       );
     }
@@ -463,6 +563,7 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
     if (controller == null || !controller.value.isInitialized) {
       return _CameraFallback(
         message: _errorMessage ?? 'Camera unavailable.',
+        permissionBlocked: _permissionBlocked,
         onRetry: _bootstrap,
       );
     }
@@ -500,8 +601,8 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
                         ? 'Front'
                         : 'Back',
                 onFlip: _flipCamera,
-                onZoomIn: () => _nudgeZoom(0.35),
-                onZoomOut: () => _nudgeZoom(-0.35),
+                onZoomIn: () => _nudgeZoom((_maxZoom - _minZoom) * 0.12),
+                onZoomOut: () => _nudgeZoom(-(_maxZoom - _minZoom) * 0.12),
                 onZoomChanged: _setZoom,
               ),
             ),
@@ -513,6 +614,9 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
 }
 
 /// Full-window desktop/webcam stage — landscape frame, not a phone crop.
+///
+/// [zoom] is a digital crop factor where 1.0 = full fitted frame. Values below
+/// 1.0 are not used by the parent.
 class _DesktopCameraStage extends StatelessWidget {
   const _DesktopCameraStage({
     required this.controller,
@@ -542,21 +646,21 @@ class _DesktopCameraStage extends StatelessWidget {
         late final double baseW;
         late final double baseH;
         if (viewAspect > camAspect) {
-          // Window is wider than camera — fit to height, letterbox sides.
           baseH = viewH;
           baseW = baseH * camAspect;
         } else {
-          // Window is taller — fit to width, letterbox top/bottom.
           baseW = viewW;
           baseH = baseW / camAspect;
         }
+
+        final scale = zoom < 1.0 ? 1.0 : zoom;
 
         return ClipRect(
           child: ColoredBox(
             color: AppColors.coachDark,
             child: Center(
               child: Transform.scale(
-                scale: zoom,
+                scale: scale,
                 child: SizedBox(
                   width: baseW,
                   height: baseH,
@@ -615,6 +719,8 @@ class _CameraControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Normalize label to “1.0x … Nx” relative to the fitted frame.
+    final labelZoom = minZoom <= 0 ? zoom : (zoom / minZoom);
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
@@ -656,7 +762,7 @@ class _CameraControls extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Text(
-              '${zoom.toStringAsFixed(1)}x',
+              '${labelZoom.toStringAsFixed(1)}x',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: AppColors.accent,
                 fontWeight: FontWeight.w700,
@@ -729,10 +835,12 @@ class _CameraFallback extends StatelessWidget {
   const _CameraFallback({
     required this.message,
     required this.onRetry,
+    this.permissionBlocked = false,
   });
 
   final String message;
   final VoidCallback onRetry;
+  final bool permissionBlocked;
 
   @override
   Widget build(BuildContext context) {
@@ -743,32 +851,48 @@ class _CameraFallback extends StatelessWidget {
       child: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.videocam_off_outlined,
-                size: 48,
-                color: AppColors.midTeal,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: AppColors.onCoachDark.withValues(alpha: 0.8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.videocam_off_outlined,
+                  size: 48,
+                  color: AppColors.midTeal,
                 ),
-              ),
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: onRetry,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.action,
-                  foregroundColor: AppColors.onPrimary,
+                const SizedBox(height: 16),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.onCoachDark.withValues(alpha: 0.8),
+                  ),
                 ),
-                child: const Text('Try again'),
-              ),
-            ],
+                if (permissionBlocked && kIsWeb) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'In Chrome: click the tune/lock icon left of the URL → '
+                    'Site settings → Camera → Allow. Then tap Try again '
+                    '(or reload the page).',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.onCoachDark.withValues(alpha: 0.65),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: onRetry,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.action,
+                    foregroundColor: AppColors.onPrimary,
+                  ),
+                  child: const Text('Try again'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
