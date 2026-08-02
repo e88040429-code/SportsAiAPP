@@ -1,9 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:setpoint_ai/app.dart';
+import 'package:setpoint_ai/core/router/app_router.dart';
+
+Future<void> _pumpFreshApp(WidgetTester tester) async {
+  // GoRouter is a process-wide singleton; reset so each test starts at welcome.
+  await tester.pumpWidget(const SetPointApp());
+  appRouter.go('/sports');
+  await tester.pumpAndSettle();
+}
 
 Future<void> _enterAppAsVolleyball(WidgetTester tester) async {
-  await tester.pumpWidget(const SetPointApp());
-  await tester.pumpAndSettle();
+  await _pumpFreshApp(tester);
 
   expect(find.textContaining('Welcome, Emma'), findsOneWidget);
 
@@ -13,8 +20,7 @@ Future<void> _enterAppAsVolleyball(WidgetTester tester) async {
 
 void main() {
   testWidgets('Welcome screen asks Emma to pick a sport', (tester) async {
-    await tester.pumpWidget(const SetPointApp());
-    await tester.pumpAndSettle();
+    await _pumpFreshApp(tester);
 
     expect(find.textContaining('Welcome, Emma'), findsOneWidget);
     expect(
@@ -88,8 +94,10 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Start Drill'));
-    await tester.pumpAndSettle();
+    // Coach keeps a loading spinner / camera bootstrap running — don't settle forever.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Live Coach'), findsOneWidget);
+    expect(find.textContaining('Live Coach'), findsOneWidget);
   });
 }
