@@ -47,6 +47,9 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
+# Local toolchain (e.g. portable CMake for dartcv4 / pose_detection)
+.tools/
+
 # Local secrets / AI keys
 .env
 .env.*

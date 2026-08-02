@@ -14,8 +14,11 @@ import 'data/clip_analysis_session.dart';
 import 'data/clip_form_analyzer.dart';
 import 'data/clip_import_validator.dart';
 import 'data/clip_video_loader.dart';
-import 'data/coach_mock_data.dart';
 import 'data/model_pose_library.dart';
+import 'pose/live_pose_coach.dart';
+import 'pose/live_session_recorder.dart';
+import 'pose/pose_detector_service.dart';
+import 'pose/pose_frame.dart';
 import 'widgets/clip_analysis_panel.dart';
 import 'widgets/coach_camera_preview.dart';
 import 'widgets/coach_metrics_bar.dart';
@@ -41,6 +44,42 @@ class _CoachScreenState extends State<CoachScreen> {
   SkillModelKind _modelKind = SkillModelKind.hitting;
   ClipAnalysisResult? _analysis;
   final _athleteDescriptionController = TextEditingController();
+  final PoseDetectorService _poseService = PoseDetectorService();
+  final LivePoseCoach _poseCoach = LivePoseCoach();
+  final LiveSessionRecorder _sessionRecorder = LiveSessionRecorder();
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_poseService.initialize());
+    _poseService.latestFrame.addListener(_onLivePoseFrame);
+  }
+
+  void _onLivePoseFrame() {
+    if (!_isRecording) return;
+    _sessionRecorder.addFrame(_poseService.latestFrame.value);
+  }
+
+  void _onJpegFrame(CameraJpegFrame frame) {
+    unawaited(
+      _poseService.processImageBytes(
+        frame.bytes,
+        imageSize: frame.imageSize,
+        mirrorHorizontally: frame.mirrorHorizontally,
+      ),
+    );
+  }
+
+  void _onStreamFrame(CameraStreamFrame frame) {
+    unawaited(
+      _poseService.processCameraImage(
+        frame.image,
+        detectionImageSize: frame.detectionImageSize,
+        mirrorHorizontally: frame.mirrorHorizontally,
+        rotation: frame.rotation,
+      ),
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -71,7 +110,33 @@ class _CoachScreenState extends State<CoachScreen> {
   }
 
   void _toggleRecording() {
-    setState(() => _isRecording = !_isRecording);
+    if (!_isRecording) {
+      _sessionRecorder.start();
+      setState(() => _isRecording = true);
+      return;
+    }
+
+    final sport = appSportController.sport;
+    final analysis = _sessionRecorder.finish(
+      sport: sport,
+      kind: SkillModelKind.hitting,
+    );
+    setState(() => _isRecording = false);
+
+    if (analysis == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Recording too short — move in frame for a few seconds, then stop.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    clipAnalysisController.publish(analysis);
+    context.go('/recap');
   }
 
   Future<void> _importClip() async {
@@ -109,6 +174,12 @@ class _CoachScreenState extends State<CoachScreen> {
       _athleteDescriptionController.clear();
       _analysis = null;
     });
+    _poseService.clearFrame();
+    _poseCoach.reset();
+    if (_isRecording) {
+      _sessionRecorder.cancel();
+      _isRecording = false;
+    }
 
     await _disposeVideo();
     // Load video in background — description + Generate come first.
@@ -225,9 +296,13 @@ class _CoachScreenState extends State<CoachScreen> {
 
   @override
   void dispose() {
+    _sessionRecorder.cancel();
+    _poseService.latestFrame.removeListener(_onLivePoseFrame);
     _athleteDescriptionController.dispose();
     _video?.dispose();
+    final poseService = _poseService;
     super.dispose();
+    unawaited(poseService.dispose());
   }
 
   @override
@@ -265,8 +340,14 @@ class _CoachScreenState extends State<CoachScreen> {
           body: Stack(
             fit: StackFit.expand,
             children: [
-              // Live camera only — no persistent stickman overlay
-              const CoachCameraPreview(),
+              CoachCameraPreview(
+                poseEnabled: true,
+                onJpegFrame: _onJpegFrame,
+                onStreamFrame: kIsWeb ? null : _onStreamFrame,
+                poseFrameListenable: _poseService.latestFrame,
+                canCaptureFrame: () =>
+                    _poseService.isReady && !_poseService.isBusy,
+              ),
               IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -310,6 +391,52 @@ class _CoachScreenState extends State<CoachScreen> {
                                 ),
                               ),
                             ),
+                            ValueListenableBuilder<String?>(
+                              valueListenable: _poseService.statusMessage,
+                              builder: (context, status, _) {
+                                if (status != null) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Text(
+                                      status,
+                                      style:
+                                          theme.textTheme.labelSmall?.copyWith(
+                                        color: AppColors.onCoachDark
+                                            .withValues(alpha: 0.75),
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return ValueListenableBuilder<PoseFrame?>(
+                                  valueListenable: _poseService.latestFrame,
+                                  builder: (context, frame, _) {
+                                    if (frame == null) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Container(
+                                      margin: const EdgeInsets.only(right: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: colors.coachLine
+                                            .withValues(alpha: 0.85),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        'Tracking',
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                          color: AppColors.onCoachDark,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                             if (_isRecording)
                               Container(
                                 margin: const EdgeInsets.only(right: 8),
@@ -351,9 +478,12 @@ class _CoachScreenState extends State<CoachScreen> {
                       top: 56,
                       left: 20,
                       right: 20,
-                      child: CueBubble(
-                        message:
-                            '${CoachMockData.coachingCueFor(sport)} Import a clip to convert it into a stick figure and compare with a perfect model.',
+                      child: ValueListenableBuilder<PoseFrame?>(
+                        valueListenable: _poseService.latestFrame,
+                        builder: (context, frame, _) {
+                          final insights = _poseCoach.analyze(frame, sport);
+                          return CueBubble(message: insights.cue);
+                        },
                       ),
                     ),
                     Positioned(
@@ -363,8 +493,12 @@ class _CoachScreenState extends State<CoachScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          CoachMetricsBar(
-                            metrics: CoachMockData.metricsFor(sport),
+                          ValueListenableBuilder<PoseFrame?>(
+                            valueListenable: _poseService.latestFrame,
+                            builder: (context, frame, _) {
+                              final insights = _poseCoach.analyze(frame, sport);
+                              return CoachMetricsBar(metrics: insights.metrics);
+                            },
                           ),
                           const SizedBox(height: 16),
                           Row(

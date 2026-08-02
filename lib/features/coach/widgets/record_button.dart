@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 
-/// Visual record control for the Live Coach shell (no camera APIs).
+/// Record control for Live Coach — start/stop buffers poses into Session Recap.
 class RecordButton extends StatelessWidget {
   const RecordButton({
     super.key,

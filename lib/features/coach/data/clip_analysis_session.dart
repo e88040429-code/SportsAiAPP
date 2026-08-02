@@ -85,8 +85,12 @@ class ClipAnalysisResult {
         ? 'Athlete’s own description of the clip:\n${athleteDescription.trim()}\n\n'
         : 'Athlete has not written a clip description yet.\n\n';
 
+    final source = clipName.startsWith('Live session')
+        ? 'Athlete just recorded a live Coach session "$clipName" ($skillLabel).'
+        : 'Athlete just imported clip "$clipName" ($skillLabel).';
+
     return '''
-Athlete just imported clip "$clipName" ($skillLabel).
+$source
 $athleteBlock
 What the coach system sees in the motion:
 $motionDescription
@@ -94,7 +98,7 @@ $motionDescription
 Coach cues already given:
 ${feedback.map((f) => '- $f').join('\n')}
 Overall form score: $overallScore/100.
-Respond as if you clearly watched this clip. Prefer the athlete’s description when they wrote one. Do not invent unrelated mistakes, and do not quote joint angles in degrees.
+Respond as if you clearly watched this motion. Prefer the athlete’s description when they wrote one. Do not invent unrelated mistakes, and do not quote joint angles in degrees.
 ''';
   }
 }

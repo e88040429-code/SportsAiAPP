@@ -99,7 +99,9 @@ class RecapScreen extends StatelessWidget {
                           ],
                           const SizedBox(height: 12),
                           Text(
-                            'What I see in your clip',
+                            analysis.clipName.startsWith('Live session')
+                                ? 'What I see in your session'
+                                : 'What I see in your clip',
                             style: theme.textTheme.labelMedium?.copyWith(
                               color: colors.action,
                               fontWeight: FontWeight.w700,
@@ -118,7 +120,7 @@ class RecapScreen extends StatelessWidget {
                     const SizedBox(height: 20),
                   ] else ...[
                     Text(
-                      'Import a clip in Live Coach to fill this review with your analysis.',
+                      'Record a Live Coach session or import a clip to fill this review.',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                       ),
@@ -135,6 +137,16 @@ class RecapScreen extends StatelessWidget {
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
+                    ),
+                    const SizedBox(height: 28),
+                    YouVsCoachSection(
+                      sport: sport,
+                      athleteJoints: analysis.athletePeakJoints,
+                      coachJoints: analysis.modelPeakJoints,
+                    ),
+                    const SizedBox(height: 28),
+                    JointAnglesList(
+                      comparisons: analysis.jointComparisons,
                     ),
                     const SizedBox(height: 28),
                     Text(

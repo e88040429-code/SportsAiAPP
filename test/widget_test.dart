@@ -6,7 +6,12 @@ import 'package:setpoint_ai/core/sport/app_sport.dart';
 Future<void> _enterAppAsVolleyball(WidgetTester tester) async {
   appSportController.debugReset();
   await tester.pumpWidget(const SetPointApp());
+  appRouter.go('/sports');
   await tester.pumpAndSettle();
+}
+
+Future<void> _enterAppAsVolleyball(WidgetTester tester) async {
+  await _pumpFreshApp(tester);
 
   expect(find.textContaining('Welcome, Emma'), findsOneWidget);
 
@@ -21,8 +26,7 @@ void main() {
   });
 
   testWidgets('Welcome screen asks Emma to pick a sport', (tester) async {
-    await tester.pumpWidget(const SetPointApp());
-    await tester.pumpAndSettle();
+    await _pumpFreshApp(tester);
 
     expect(find.textContaining('Welcome, Emma'), findsOneWidget);
     expect(
@@ -122,7 +126,9 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Start Drill'));
-    await tester.pumpAndSettle();
+    // Coach keeps a loading spinner / camera bootstrap running — don't settle forever.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.textContaining('Live Coach'), findsOneWidget);
   });

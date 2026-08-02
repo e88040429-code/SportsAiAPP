@@ -41,6 +41,7 @@ dependencies:
   file_picker: ^8.1.4
   video_player: ^2.9.2
   web: ^1.1.1
+  pose_detection: ^3.6.0
 
 dev_dependencies:
   flutter_test:

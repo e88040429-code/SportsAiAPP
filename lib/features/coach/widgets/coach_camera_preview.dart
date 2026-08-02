@@ -1,9 +1,42 @@
+import 'dart:async';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:pose_detection/pose_detection.dart';
 
 import '../../../core/sport/shell_tab_scope.dart';
 import '../../../core/theme/app_colors.dart';
+import '../pose/live_pose_overlay.dart';
+import '../pose/pose_frame.dart';
+
+/// Encoded camera snapshot for web (and fallback) pose detection.
+class CameraJpegFrame {
+  const CameraJpegFrame({
+    required this.bytes,
+    required this.imageSize,
+    required this.mirrorHorizontally,
+  });
+
+  final Uint8List bytes;
+  final Size imageSize;
+  final bool mirrorHorizontally;
+}
+
+/// Native camera stream frame for [PoseDetector.detectFromCameraImage].
+class CameraStreamFrame {
+  const CameraStreamFrame({
+    required this.image,
+    required this.detectionImageSize,
+    required this.mirrorHorizontally,
+    required this.rotation,
+  });
+
+  final CameraImage image;
+  final Size detectionImageSize;
+  final bool mirrorHorizontally;
+  final CameraFrameRotation? rotation;
+}
 
 /// Live device camera feed for the Coach HUD (web + mobile).
 ///
@@ -13,7 +46,29 @@ import '../../../core/theme/app_colors.dart';
 /// Camera only starts while the Coach bottom-nav tab is active — the shell uses
 /// an IndexedStack, so this widget can stay mounted on other tabs.
 class CoachCameraPreview extends StatefulWidget {
-  const CoachCameraPreview({super.key});
+  const CoachCameraPreview({
+    super.key,
+    this.poseEnabled = false,
+    this.onJpegFrame,
+    this.onStreamFrame,
+    this.poseFrameListenable,
+    this.canCaptureFrame,
+  });
+
+  /// When true, start feeding frames to the pose callbacks once the camera opens.
+  final bool poseEnabled;
+
+  /// Web / encoded-image path (~10–15 FPS, drops while busy).
+  final ValueChanged<CameraJpegFrame>? onJpegFrame;
+
+  /// Native image-stream path. Ignored on web.
+  final ValueChanged<CameraStreamFrame>? onStreamFrame;
+
+  /// Live skeleton drawn inside the letterboxed camera rect.
+  final ValueListenable<PoseFrame?>? poseFrameListenable;
+
+  /// Return false to skip a JPEG capture (e.g. detector still busy / not ready).
+  final bool Function()? canCaptureFrame;
 
   @override
   State<CoachCameraPreview> createState() => _CoachCameraPreviewState();
@@ -40,6 +95,15 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   double _pinchBaseZoom = _fitZoom;
   bool _useHardwareZoom = false;
 
+  Timer? _webCaptureTimer;
+  bool _capturingJpeg = false;
+  bool _streaming = false;
+
+  bool get _isFrontCamera {
+    if (_cameras.isEmpty) return true;
+    return _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -61,9 +125,24 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   }
 
   @override
+  void didUpdateWidget(covariant CoachCameraPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.poseEnabled != widget.poseEnabled) {
+      if (widget.poseEnabled) {
+        _startPoseFeed();
+      } else {
+        _stopPoseFeed();
+      }
+    }
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _controller?.dispose();
+    unawaited(_stopPoseFeed());
+    final controller = _controller;
+    _controller = null;
+    controller?.dispose();
     super.dispose();
   }
 
@@ -80,8 +159,10 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
     }
 
     if (state == AppLifecycleState.inactive) {
-      controller.dispose();
+      unawaited(_stopPoseFeed());
       _controller = null;
+      if (mounted) setState(() {});
+      controller.dispose();
     } else if (state == AppLifecycleState.resumed) {
       if (_cameras.isNotEmpty) {
         _openCamera(_cameras[_cameraIndex]);
@@ -151,11 +232,20 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
       _initializing = true;
     });
 
+    await _stopPoseFeed();
+
     final previous = _controller;
+    // Drop the disposed controller from the tree before releasing it.
+    if (previous != null) {
+      _controller = null;
+      if (mounted) setState(() {});
+    }
+
     final controller = CameraController(
       camera,
-      ResolutionPreset.high,
+      ResolutionPreset.medium,
       enableAudio: false,
+      imageFormatGroup: kIsWeb ? null : ImageFormatGroup.yuv420,
     );
 
     try {
@@ -218,15 +308,176 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
     }
   }
 
-  void _applyCameraFailure(CameraException e) {
-    final blocked = _isPermissionDenial(e);
-    setState(() {
-      _initializing = false;
-      _permissionBlocked = blocked;
-      _errorMessage = blocked
-          ? _permissionBlockedMessage()
-          : _messageForCameraException(e);
-    });
+  Future<void> _startPoseFeed() async {
+    final controller = _controller;
+    if (!widget.poseEnabled ||
+        controller == null ||
+        !controller.value.isInitialized) {
+      return;
+    }
+
+    if (kIsWeb || widget.onStreamFrame == null) {
+      _webCaptureTimer?.cancel();
+      _webCaptureTimer = Timer.periodic(_webCaptureInterval, (_) {
+        unawaited(_captureJpegFrame());
+      });
+      return;
+    }
+
+    if (_streaming || controller.value.isStreamingImages) return;
+    try {
+      await controller.startImageStream(_onCameraImage);
+      _streaming = true;
+    } catch (e) {
+      debugPrint('Image stream unavailable, falling back to JPEG: $e');
+      _webCaptureTimer?.cancel();
+      _webCaptureTimer = Timer.periodic(_webCaptureInterval, (_) {
+        unawaited(_captureJpegFrame());
+      });
+    }
+  }
+
+  Future<void> _stopPoseFeed() async {
+    _webCaptureTimer?.cancel();
+    _webCaptureTimer = null;
+    _capturingJpeg = false;
+
+    final controller = _controller;
+    if (_streaming &&
+        controller != null &&
+        controller.value.isStreamingImages) {
+      try {
+        await controller.stopImageStream();
+      } catch (_) {}
+    }
+    _streaming = false;
+  }
+
+  Future<void> _captureJpegFrame() async {
+    if (_capturingJpeg || !widget.poseEnabled || !mounted) return;
+    if (widget.canCaptureFrame?.call() == false) return;
+
+    final controller = _controller;
+    final callback = widget.onJpegFrame;
+    if (callback == null ||
+        controller == null ||
+        !controller.value.isInitialized ||
+        controller.value.isTakingPicture) {
+      return;
+    }
+
+    _capturingJpeg = true;
+    try {
+      final file = await controller.takePicture();
+      if (!mounted || !identical(_controller, controller)) return;
+
+      final bytes = await file.readAsBytes();
+      if (!mounted || !identical(_controller, controller) || bytes.isEmpty) {
+        return;
+      }
+
+      final preview = controller.value.previewSize;
+      final fromJpeg = _jpegPixelSize(bytes);
+      final imageSize = fromJpeg ??
+          Size(
+            preview?.width ?? 1280,
+            preview?.height ?? 720,
+          );
+
+      callback(
+        CameraJpegFrame(
+          bytes: bytes,
+          imageSize: imageSize,
+          mirrorHorizontally: _isFrontCamera,
+        ),
+      );
+    } on CameraException catch (e) {
+      // Common during flip/dispose — ignore disposed-controller races.
+      if (e.code.contains('Disposed') || e.code.contains('disposed')) return;
+      debugPrint('JPEG pose capture failed: $e');
+    } catch (e) {
+      debugPrint('JPEG pose capture failed: $e');
+    } finally {
+      _capturingJpeg = false;
+    }
+  }
+
+  /// Reads SOF dimensions from a JPEG without a full decode.
+  Size? _jpegPixelSize(Uint8List bytes) {
+    if (bytes.length < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8) return null;
+    var i = 2;
+    while (i + 9 < bytes.length) {
+      if (bytes[i] != 0xFF) return null;
+      final marker = bytes[i + 1];
+      // Soften: skip fill bytes
+      if (marker == 0xFF) {
+        i++;
+        continue;
+      }
+      // Standalone markers without length
+      if (marker == 0xD8 || marker == 0xD9 || (marker >= 0xD0 && marker <= 0xD7)) {
+        i += 2;
+        continue;
+      }
+      final length = (bytes[i + 2] << 8) | bytes[i + 3];
+      if (length < 2 || i + 2 + length > bytes.length) return null;
+      // SOF0–SOF3, SOF5–SOF7, SOF9–SOF11, SOF13–SOF15
+      final isSof = (marker >= 0xC0 && marker <= 0xC3) ||
+          (marker >= 0xC5 && marker <= 0xC7) ||
+          (marker >= 0xC9 && marker <= 0xCB) ||
+          (marker >= 0xCD && marker <= 0xCF);
+      if (isSof) {
+        final height = (bytes[i + 5] << 8) | bytes[i + 6];
+        final width = (bytes[i + 7] << 8) | bytes[i + 8];
+        if (width > 0 && height > 0) {
+          return Size(width.toDouble(), height.toDouble());
+        }
+        return null;
+      }
+      i += 2 + length;
+    }
+    return null;
+  }
+
+  void _onCameraImage(CameraImage image) {
+    final controller = _controller;
+    final callback = widget.onStreamFrame;
+    if (!widget.poseEnabled || controller == null || callback == null) return;
+
+    final rotation = rotationForFrame(
+      width: image.width,
+      height: image.height,
+      sensorOrientation: controller.description.sensorOrientation,
+      isFrontCamera: _isFrontCamera,
+      deviceOrientation: controller.value.deviceOrientation,
+    );
+
+    final size = detectionSize(
+      width: image.width,
+      height: image.height,
+      rotation: rotation,
+      maxDim: 640,
+    );
+
+    callback(
+      CameraStreamFrame(
+        image: image,
+        detectionImageSize: Size(size.width, size.height),
+        mirrorHorizontally: _isFrontCamera,
+        rotation: rotation,
+      ),
+    );
+  }
+
+  Future<void> _flipCamera() async {
+    if (_cameras.length < 2 || _initializing) return;
+    final next = (_cameraIndex + 1) % _cameras.length;
+    _cameraIndex = next;
+    await _openCamera(_cameras[next]);
+  }
+
+  void _setZoom(double value) {
+    setState(() => _zoom = value.clamp(_minZoom, _maxZoom));
   }
 
   bool _isPermissionDenial(CameraException e) {
@@ -329,8 +580,8 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
             },
             child: _DesktopCameraStage(
               controller: controller,
-              // Hardware zoom already applied on the stream; don't double-scale.
-              zoom: _useHardwareZoom ? _fitZoom : _zoom / _minZoom,
+              zoom: _zoom,
+              poseFrameListenable: widget.poseFrameListenable,
             ),
           ),
           Positioned(
@@ -370,10 +621,12 @@ class _DesktopCameraStage extends StatelessWidget {
   const _DesktopCameraStage({
     required this.controller,
     required this.zoom,
+    this.poseFrameListenable,
   });
 
   final CameraController controller;
   final double zoom;
+  final ValueListenable<PoseFrame?>? poseFrameListenable;
 
   @override
   Widget build(BuildContext context) {
@@ -411,13 +664,24 @@ class _DesktopCameraStage extends StatelessWidget {
                 child: SizedBox(
                   width: baseW,
                   height: baseH,
-                  child: FittedBox(
-                    fit: BoxFit.fill,
-                    child: SizedBox(
-                      width: rawW,
-                      height: rawH,
-                      child: CameraPreview(controller),
-                    ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.fill,
+                        child: SizedBox(
+                          width: rawW,
+                          height: rawH,
+                          child: CameraPreview(controller),
+                        ),
+                      ),
+                      if (poseFrameListenable != null)
+                        IgnorePointer(
+                          child: LivePoseOverlay(
+                            listenable: poseFrameListenable!,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),

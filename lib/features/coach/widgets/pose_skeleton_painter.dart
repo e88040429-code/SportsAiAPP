@@ -2,18 +2,26 @@ import 'package:flutter/material.dart';
 
 import '../../../core/sport/app_sport.dart';
 import '../../../core/theme/sport_colors.dart';
+import '../pose/blazepose_to_coco.dart';
 
-/// Draws a fake 17-joint pose skeleton (COCO-style) for the Live Coach HUD.
+/// Draws a 17-joint pose skeleton (COCO-style) for the Live Coach HUD.
+///
+/// When [confidence] is provided, bones/joints below [minVisibility] are skipped
+/// so missing landmarks do not draw lines to the origin.
 class PoseSkeletonPainter extends CustomPainter {
   const PoseSkeletonPainter({
     required this.joints,
     required this.lineColor,
     required this.jointColor,
+    this.confidence,
+    this.minVisibility = BlazePoseToCoco.minVisibility,
   });
 
   final List<Offset> joints;
   final Color lineColor;
   final Color jointColor;
+  final List<double>? confidence;
+  final double minVisibility;
 
   /// Volleyball follow-through stance.
   static const List<Offset> volleyballJoints = [
@@ -83,8 +91,17 @@ class PoseSkeletonPainter extends CustomPainter {
     (14, 16),
   ];
 
+  bool _visible(int index) {
+    if (index < 0 || index >= joints.length) return false;
+    final conf = confidence;
+    if (conf == null || conf.length != joints.length) return true;
+    return conf[index] >= minVisibility;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
+    if (joints.isEmpty) return;
+
     final linePaint = Paint()
       ..color = lineColor
       ..strokeWidth = 3
@@ -105,10 +122,14 @@ class PoseSkeletonPainter extends CustomPainter {
     ];
 
     for (final (a, b) in bones) {
+      if (a >= scaled.length || b >= scaled.length) continue;
+      if (!_visible(a) || !_visible(b)) continue;
       canvas.drawLine(scaled[a], scaled[b], linePaint);
     }
 
-    for (final joint in scaled) {
+    for (var i = 0; i < scaled.length; i++) {
+      if (!_visible(i)) continue;
+      final joint = scaled[i];
       canvas.drawCircle(joint, 5, jointPaint);
       canvas.drawCircle(joint, 7, jointRingPaint);
     }
@@ -118,7 +139,9 @@ class PoseSkeletonPainter extends CustomPainter {
   bool shouldRepaint(covariant PoseSkeletonPainter oldDelegate) {
     return oldDelegate.lineColor != lineColor ||
         oldDelegate.jointColor != jointColor ||
-        oldDelegate.joints != joints;
+        oldDelegate.minVisibility != minVisibility ||
+        oldDelegate.joints != joints ||
+        oldDelegate.confidence != confidence;
   }
 }
 
