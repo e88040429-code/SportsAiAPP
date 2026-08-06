@@ -1,9 +1,9 @@
 # SetPoint AI — Phase 2 Handoff
 
 Parent index: [`SETPOINT_AGENT_HANDOFF.md`](SETPOINT_AGENT_HANDOFF.md)  
-Phase 1 (pose / referee — finish first): [`SETPOINT_PHASE1_HANDOFF.md`](SETPOINT_PHASE1_HANDOFF.md)
+Phase 1 (pose pipeline — finish first): [`SETPOINT_PHASE1_HANDOFF.md`](SETPOINT_PHASE1_HANDOFF.md)
 
-**Gate:** Start Phase 2 only after **Iteration 8.6 is Done** and **Iteration 9 MVP is shipped** (unless the user redirects).
+**Gate:** Start Phase 2 only after **Iteration 8.6 is Done** (unless the user redirects).
 
 Do **not** re-scaffold the app. Flutter at repo root: https://github.com/e88040429-code/SportsAiAPP.git
 
@@ -14,11 +14,11 @@ With API: `flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:500
 
 ## Goal
 
-Replace mock catalogs (`*MockData`) with a **live content pipeline** so Library, Home, Drill Detail (and related surfaces) use:
-
-- Real **drill videos**
-- Real **skill descriptions**
-- Real **step / key-position breakdowns**
+1. **Iter 9** — demo-able **live AI referee** (hard-call assist) on the same vision stack as Phase 1 pose.
+2. Then replace mock catalogs (`*MockData`) with a **live content pipeline** so Library, Home, Drill Detail (and related surfaces) use:
+   - Real **drill videos**
+   - Real **skill descriptions**
+   - Real **step / key-position breakdowns**
 
 Testing is a **first-class** workstream — not an afterthought.
 
@@ -39,6 +39,7 @@ flowchart LR
   Flutter --> DrillDetail
   Flutter --> Home
   SessionPose["Pose session from Phase 1 Iter 8"] --> Recap
+  SessionPose --> Referee["Iter 9 live AI referee"]
 ```
 
 **Local run:**
@@ -53,12 +54,19 @@ flowchart LR
 
 | Iter | Focus | Deliverable |
 |------|--------|-------------|
+| **9** | Live AI referee MVP | Hard-call assist — same vision stack as Iter 8; scope sports/calls with the user first. **Done when:** demo-able on at least one platform |
 | **10** | Testing foundation | Expand Flutter tests (widget + unit); Flask smoke/unit tests where cheap; create [`QA_SMOKE_CHECKLIST.md`](QA_SMOKE_CHECKLIST.md). `flutter test` + checklist = **exit gate** for every later slice |
 | **11** | Firebase + Flask + Flutter repository | Schema for drills/skills (`id`, sport, training/rehab, title, description, steps, video URL); Flask list/filter + get-by-id; `DrillContentRepository`; mock fallback only if API down |
 | **12** | Seed copy + step breakdowns | Real descriptions + key-position timelines in Firebase — **volleyball** first, then football/basketball; wire Library + Drill Detail |
 | **13** | Drill video pipeline | Firebase Storage → URLs via Flask; `video_player` on Drill Detail; loading/error/empty; web-safe |
 | **14** | App-wide live wiring | Home / Featured / Rehab from API/session; remove direct `*MockData` from screens |
 | **15** | Regression + release QA | Flutter + Flask suites green; full manual smoke + bug pass; document known gaps |
+
+### Iteration 9 — Live AI referee (after 8.6)
+
+- Hard-call assist MVP; scope sports/calls with the user first.
+- Reuse Phase 1 `pose_detection` / Coach vision path — do not introduce a parallel ML stack unless required.
+- **Done when:** demo-able on at least one platform.
 
 ---
 
@@ -85,6 +93,7 @@ Maintain [`QA_SMOKE_CHECKLIST.md`](QA_SMOKE_CHECKLIST.md) (create in Iter 10). M
 - Ask AI: Offline tips vs Live agent
 - Sport switch refreshes API content
 - Rehab checklist interactions
+- Iter 9: referee hard-call demo path
 
 ### Bug process
 
@@ -97,7 +106,7 @@ Maintain [`QA_SMOKE_CHECKLIST.md`](QA_SMOKE_CHECKLIST.md) (create in Iter 10). M
 
 - Prefer **Flutter repository → Flask → Firebase** over new `*MockData`
 - No Firebase secrets in the Flutter web app
-- Do **not** expand AI referee scope inside iters 10–15
+- Confine referee work to **Iter 9**; do **not** expand AI referee scope inside iters 10–15
 - Small slices; commit/push only when asked
 
 ## Non-goals
@@ -108,4 +117,4 @@ Maintain [`QA_SMOKE_CHECKLIST.md`](QA_SMOKE_CHECKLIST.md) (create in Iter 10). M
 
 ## Success (end of Phase 2)
 
-Drill videos, descriptions, and step breakdowns served from Firebase via Flask; screens not dependent on mock catalogs; automated tests + QA smoke checklist prove the platform works as intended.
+Demo-able live AI referee (9); drill videos, descriptions, and step breakdowns served from Firebase via Flask; screens not dependent on mock catalogs; automated tests + QA smoke checklist prove the platform works as intended.

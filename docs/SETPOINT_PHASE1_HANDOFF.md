@@ -1,7 +1,7 @@
 # SetPoint AI — Phase 1 Handoff
 
 Parent index: [`SETPOINT_AGENT_HANDOFF.md`](SETPOINT_AGENT_HANDOFF.md)  
-Phase 2 (do not start until 8.6 + Iter 9): [`SETPOINT_PHASE2_HANDOFF.md`](SETPOINT_PHASE2_HANDOFF.md)
+Phase 2 (after 8.6 — referee + content): [`SETPOINT_PHASE2_HANDOFF.md`](SETPOINT_PHASE2_HANDOFF.md)
 
 Do **not** re-scaffold the app. Continue from the Flutter project at repo root.
 
@@ -26,7 +26,7 @@ Badge **Offline tips** = mock fallback; **Live agent** = Gemini via proxy.
 
 **SetPoint AI** — AI motion analysis for **football, volleyball, basketball**. Pose estimation vs coach reference libraries → tips on form, balance, symmetry, timing.
 
-**Phase 1 Iter 9 goal:** live AI referee for hard in-game calls (same vision stack).
+**Phase 1 goal:** real live pose pipeline in Coach + Recap from a recorded session (iters **8.1–8.6**). Live AI referee (Iter 9) lives in Phase 2.
 
 UI was volleyball-first (orange `#FF7F32`); multi-sport switcher exists. Branding: `lib/core/constants/app_strings.dart`.
 
@@ -46,7 +46,6 @@ UI was volleyball-first (orange `#FF7F32`); multi-sport switcher exists. Brandin
 | **7 Multi-sport** | Done | Football / volleyball / basketball switcher; screens filter by sport |
 | **Ask AI / Gemini** | Done (extra) | Chat UI + `CoachAiAgent` + proxy |
 | **8 Pose pipeline** | **Next** | Real `pose_detection` — **8.1–8.6** below |
-| **9 Live AI referee** | Pending | After 8.6 — hard-call assist MVP |
 
 **Important:** Navigation/widgets are largely in place. **Almost all feature data is still mock** (`*MockData` under `lib/features/*/data/`). Pose overlay is fake until Iter 8. Tests are thin (`test/widget_test.dart`).
 
@@ -86,12 +85,11 @@ flowchart TB
 
 ## Remaining Phase 1 work
 
-Finish **8.1 → 8.6**, then **Iter 9**. Do **not** start Phase 2 until that gate is met (unless the user says otherwise).
+Finish **8.1 → 8.6**. Do **not** start Phase 2 until **8.6 is Done** (unless the user says otherwise). Iter **9** (live AI referee) is documented in Phase 2.
 
 | Iter | Focus | Deliverable | Packages |
 |------|--------|-------------|----------|
 | **8** | Real pose pipeline | **8.1–8.6** below | [`pose_detection`](https://pub.dev/packages/pose_detection) |
-| **9** | Live AI referee MVP | Hard-call assist — same vision stack | TBD after 8.6 |
 
 ---
 
@@ -133,16 +131,12 @@ Finish **8.1 → 8.6**, then **Iter 9**. Do **not** start Phase 2 until that gat
 - Persist session pose/clip; Recap from real session data.
 - **Done when:** recorded Coach session fills Recap (not mock-only).
 
-### Iteration 9 — Live AI referee (after 8.6)
-
-- Hard-call assist MVP; scope sports/calls with the user first.
-- **Done when:** demo-able on at least one platform.
-
 ### Phase 1 non-goals
 
+- Live AI referee (Iter 9) → Phase 2
 - Firebase/Flask content backend → Phase 2
 - Expanding Ask AI unless requested
 
 ### Success (end of Phase 1)
 
-Live pose in Coach (8.4+), real Recap from a session (8.6), demo-able referee MVP (9).
+Live pose in Coach (8.4+), real Recap from a session (8.6).

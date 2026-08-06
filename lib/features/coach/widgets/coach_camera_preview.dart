@@ -79,6 +79,7 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   /// 1x = full camera frame fitted in the window. No zoom-out below that.
   static const double _fitZoom = 1.0;
   static const double _defaultMaxZoom = 3.0;
+  static const Duration _webCaptureInterval = Duration(milliseconds: 150);
 
   CameraController? _controller;
   List<CameraDescription> _cameras = const [];
@@ -173,6 +174,7 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   }
 
   Future<void> _releaseCamera() async {
+    await _stopPoseFeed();
     final previous = _controller;
     _controller = null;
     if (mounted) {
@@ -292,6 +294,10 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
         _errorMessage = null;
         _permissionBlocked = false;
       });
+
+      if (widget.poseEnabled) {
+        await _startPoseFeed();
+      }
     } on CameraException catch (e) {
       await controller.dispose();
       if (!mounted || !_tabActive) return;
@@ -469,15 +475,15 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
     );
   }
 
-  Future<void> _flipCamera() async {
-    if (_cameras.length < 2 || _initializing) return;
-    final next = (_cameraIndex + 1) % _cameras.length;
-    _cameraIndex = next;
-    await _openCamera(_cameras[next]);
-  }
-
-  void _setZoom(double value) {
-    setState(() => _zoom = value.clamp(_minZoom, _maxZoom));
+  void _applyCameraFailure(CameraException e) {
+    final blocked = _isPermissionDenial(e);
+    setState(() {
+      _initializing = false;
+      _permissionBlocked = blocked;
+      _errorMessage = blocked
+          ? _permissionBlockedMessage()
+          : _messageForCameraException(e);
+    });
   }
 
   bool _isPermissionDenial(CameraException e) {
