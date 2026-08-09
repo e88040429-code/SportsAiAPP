@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../../core/sport/app_sport.dart';
 import '../../recap/data/recap_mock_data.dart';
+import '../pose/live_pose_coach.dart';
+import '../pose/pose_frame.dart';
 import 'clip_analysis_session.dart';
 import 'model_pose_library.dart';
 
@@ -63,6 +65,61 @@ abstract final class ClipFormAnalyzer {
       phaseScores: phaseScores,
       athletePeakJoints: athletePeak,
       modelPeakJoints: modelPeak,
+    );
+  }
+
+  /// Still photo vs model pose — balance & symmetry only (no timing / phases).
+  static ClipAnalysisResult analyzeStill({
+    required String clipName,
+    required AppSport sport,
+    required SkillModelKind kind,
+    required PoseFrame frame,
+  }) {
+    final scores = LivePoseCoach().stillScores(frame);
+    final modelPeak = ModelPoseLibrary.poseAt(
+      ModelPoseLibrary.modelSequence(sport, kind),
+      0.72,
+    );
+    final joints = _jointComparisons(sport, kind, frame.joints, modelPeak);
+    final issues = _rankedIssues(joints);
+    final score =
+        ((scores.balance * 0.5 + scores.symmetry * 0.5) * 100).round().clamp(
+              55,
+              96,
+            );
+
+    final headline = score >= 88
+        ? 'Clean still shape — only fine-tuning left.'
+        : score >= 75
+            ? 'Good photo. Balance or symmetry is holding you back a little.'
+            : 'Clear still-pose gaps — focus on stack and even sides.';
+
+    return ClipAnalysisResult(
+      clipName: clipName,
+      sport: sport,
+      kind: kind,
+      analyzedAt: DateTime.now(),
+      overallScore: score,
+      headline: headline,
+      motionDescription: _stillDescription(
+        clipName: clipName,
+        sport: sport,
+        kind: kind,
+        score: score,
+        balance: scores.balance,
+        symmetry: scores.symmetry,
+        issues: issues,
+      ),
+      athleteDescription: '',
+      feedback: _stillFeedback(sport: sport, kind: kind, issues: issues),
+      jointComparisons: joints,
+      phaseScores: [
+        RepScore(label: 'Balance', score: scores.balance),
+        RepScore(label: 'Symmetry', score: scores.symmetry),
+      ],
+      athletePeakJoints: frame.joints,
+      modelPeakJoints: modelPeak,
+      isStillImage: true,
     );
   }
 
@@ -351,6 +408,50 @@ abstract final class ClipFormAnalyzer {
       _ =>
         'Keep your chest over the ball through follow-through instead of falling away.',
     };
+  }
+
+  static String _stillDescription({
+    required String clipName,
+    required AppSport sport,
+    required SkillModelKind kind,
+    required int score,
+    required double balance,
+    required double symmetry,
+    required List<_Issue> issues,
+  }) {
+    final skill = kind.labelFor(sport).toLowerCase();
+    final balanceFeel = balance >= 0.85
+        ? 'Your stack looks quiet — hips sit under the shoulders'
+        : balance >= 0.72
+            ? 'Your base is usable but you lean a little off-center'
+            : 'Your base looks tipped — hips aren’t stacked under the shoulders';
+    final symmetryFeel = symmetry >= 0.85
+        ? 'left and right limbs match well'
+        : symmetry >= 0.72
+            ? 'left and right shapes are close but not even'
+            : 'one side is clearly higher or more bent than the other';
+
+    final top = issues.isEmpty ? null : issues.first;
+    final extra = top == null || top.magnitude < 6
+        ? 'This still pose is close enough to coach from.'
+        : _bodyLanguage(sport, kind, top);
+
+    return 'In photo "$clipName" I’m reading a still $skill shape (no timing). '
+        '$balanceFeel, and $symmetryFeel. $extra '
+        'Overall this is a ${score >= 85 ? 'high-quality' : score >= 75 ? 'solid' : 'developing'} '
+        'still pose for balance and symmetry work.';
+  }
+
+  static List<String> _stillFeedback({
+    required AppSport sport,
+    required SkillModelKind kind,
+    required List<_Issue> issues,
+  }) {
+    final tips = <String>[
+      for (final issue in issues.take(2)) _cueForIssue(sport, kind, issue),
+      'Hold the pose: quiet feet, hips under shoulders, matching left and right — timing doesn’t apply on a still photo.',
+    ];
+    return tips.where((t) => t.trim().isNotEmpty).toList();
   }
 
   static String _closingCue(AppSport sport, SkillModelKind kind, int score) {

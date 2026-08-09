@@ -101,7 +101,9 @@ class RecapScreen extends StatelessWidget {
                           Text(
                             analysis.clipName.startsWith('Live session')
                                 ? 'What I see in your session'
-                                : 'What I see in your clip',
+                                : analysis.isStillImage
+                                    ? 'What I see in your photo'
+                                    : 'What I see in your clip',
                             style: theme.textTheme.labelMedium?.copyWith(
                               color: colors.action,
                               fontWeight: FontWeight.w700,
@@ -120,7 +122,7 @@ class RecapScreen extends StatelessWidget {
                     const SizedBox(height: 20),
                   ] else ...[
                     Text(
-                      'Record a Live Coach session or import a clip to fill this review.',
+                      'Record a Live Coach session or import a clip or photo to fill this review.',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                       ),
@@ -190,10 +192,16 @@ class RecapScreen extends StatelessWidget {
                   const SizedBox(height: 28),
                   RepBarChart(
                     reps: reps,
-                    title: fromClip ? 'Phase quality' : 'Rep quality',
-                    subtitle: fromClip
-                        ? 'How each part of the motion compared to the model'
-                        : 'Form score by rep this session',
+                    title: !fromClip
+                        ? 'Rep quality'
+                        : analysis.isStillImage
+                            ? 'Balance & symmetry'
+                            : 'Phase quality',
+                    subtitle: !fromClip
+                        ? 'Form score by rep this session'
+                        : analysis.isStillImage
+                            ? 'Still-pose scores — timing is not used on photos'
+                            : 'How each part of the motion compared to the model',
                   ),
                 ],
               ),

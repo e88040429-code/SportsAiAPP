@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -5,7 +7,11 @@ import '../../../core/sport/app_sport.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/sport_colors.dart';
 import '../data/clip_analysis_session.dart';
+import '../data/coach_mock_data.dart';
 import '../data/model_pose_library.dart';
+import '../pose/pose_frame.dart';
+import 'coach_metrics_bar.dart';
+import 'pose_skeleton_painter.dart';
 
 class InstantFeedbackCard extends StatelessWidget {
   const InstantFeedbackCard({
@@ -60,7 +66,9 @@ class InstantFeedbackCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'What I see in your clip',
+                      analysis.isStillImage
+                          ? 'What I see in your photo'
+                          : 'What I see in your clip',
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: colors.accent,
                         fontWeight: FontWeight.w700,
@@ -143,19 +151,25 @@ class AthleteClipDescriptionField extends StatelessWidget {
     required this.sport,
     required this.controller,
     this.enabled = true,
+    this.isStillImage = false,
   });
 
   final AppSport sport;
   final TextEditingController controller;
   final bool enabled;
+  final bool isStillImage;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = SportColors.of(sport);
-    final hint = sport == AppSport.volleyball
-        ? 'Example: Right-side spike from zone 2, approach felt late, I floated on the last step and swung across my body…'
-        : 'Example: Right-foot strike after a short dribble, plant felt soft, ball skidded low to the near post…';
+    final hint = isStillImage
+        ? (sport == AppSport.volleyball
+            ? 'Optional: Hitting arm loaded, I felt my right hip drop and the left elbow sit lower…'
+            : 'Optional: Planted on my left, I felt my shoulders twist and the striking hip sit back…')
+        : (sport == AppSport.volleyball
+            ? 'Example: Right-side spike from zone 2, approach felt late, I floated on the last step and swung across my body…'
+            : 'Example: Right-foot strike after a short dribble, plant felt soft, ball skidded low to the near post…');
 
     return Container(
       width: double.infinity,
@@ -174,7 +188,9 @@ class AthleteClipDescriptionField extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '1. Describe your clip',
+                  isStillImage
+                      ? '1. Describe this pose (optional)'
+                      : '1. Describe your clip',
                   style: theme.textTheme.titleSmall?.copyWith(
                     color: colors.accent,
                     fontWeight: FontWeight.w800,
@@ -185,7 +201,9 @@ class AthleteClipDescriptionField extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Write what you’re doing and what felt off. Then tap Generate for written feedback.',
+            isStillImage
+                ? 'Pose detection already scored balance and symmetry. Add a note if you want, then tap Generate for written cues.'
+                : 'Write what you’re doing and what felt off. Then tap Generate for written feedback.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: AppColors.onCoachDark.withValues(alpha: 0.7),
               height: 1.35,
@@ -244,6 +262,10 @@ class ClipAnalysisPanel extends StatelessWidget {
     required this.clipName,
     required this.videoController,
     this.previewNote,
+    this.imageBytes,
+    this.stillPose,
+    this.stillMetrics = const [],
+    this.isStillImage = false,
     required this.isGenerating,
     this.analysis,
     required this.athleteDescriptionController,
@@ -258,6 +280,10 @@ class ClipAnalysisPanel extends StatelessWidget {
   final String clipName;
   final VideoPlayerController? videoController;
   final String? previewNote;
+  final Uint8List? imageBytes;
+  final PoseFrame? stillPose;
+  final List<CoachMetric> stillMetrics;
+  final bool isStillImage;
   final bool isGenerating;
   final ClipAnalysisResult? analysis;
   final TextEditingController athleteDescriptionController;
@@ -294,7 +320,7 @@ class ClipAnalysisPanel extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Clip analysis',
+                          isStillImage ? 'Photo pose check' : 'Clip analysis',
                           style: theme.textTheme.titleMedium?.copyWith(
                             color: AppColors.onCoachDark,
                             fontWeight: FontWeight.w700,
@@ -366,7 +392,13 @@ class ClipAnalysisPanel extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 child: Column(
                   children: [
-                    if (ready)
+                    if (isStillImage && imageBytes != null)
+                      _StillImagePosePreview(
+                        bytes: imageBytes!,
+                        pose: stillPose,
+                        sport: sport,
+                      )
+                    else if (ready)
                       ClipRRect(
                         borderRadius: BorderRadius.circular(16),
                         child: AspectRatio(
@@ -443,11 +475,17 @@ class ClipAnalysisPanel extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (ready || previewNote != null) const SizedBox(height: 14),
+                    if (ready || previewNote != null || imageBytes != null)
+                      const SizedBox(height: 14),
+                    if (isStillImage && stillMetrics.isNotEmpty) ...[
+                      CoachMetricsBar(metrics: stillMetrics),
+                      const SizedBox(height: 14),
+                    ],
                     AthleteClipDescriptionField(
                       sport: sport,
                       controller: athleteDescriptionController,
                       enabled: !isGenerating,
+                      isStillImage: isStillImage,
                     ),
                     const SizedBox(height: 14),
                     SizedBox(
@@ -473,10 +511,12 @@ class ClipAnalysisPanel extends StatelessWidget {
                             : const Icon(Icons.auto_awesome),
                         label: Text(
                           isGenerating
-                              ? 'Generating…'
+                              ? (isStillImage ? 'Reading pose…' : 'Generating…')
                               : hasFeedback
                                   ? 'Generate again'
-                                  : 'Generate',
+                                  : (isStillImage
+                                      ? 'Generate written cues'
+                                      : 'Generate'),
                           style: const TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 16,
@@ -487,7 +527,9 @@ class ClipAnalysisPanel extends StatelessWidget {
                     if (isGenerating) ...[
                       const SizedBox(height: 20),
                       Text(
-                        'Analyzing your clip with your description…',
+                        isStillImage
+                            ? 'Checking balance and symmetry on this still pose…'
+                            : 'Analyzing your clip with your description…',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: AppColors.onCoachDark.withValues(alpha: 0.7),
                         ),
@@ -513,6 +555,76 @@ class ClipAnalysisPanel extends StatelessWidget {
                       ),
                     ],
                   ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StillImagePosePreview extends StatelessWidget {
+  const _StillImagePosePreview({
+    required this.bytes,
+    required this.sport,
+    this.pose,
+  });
+
+  final Uint8List bytes;
+  final AppSport sport;
+  final PoseFrame? pose;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = SportColors.of(sport);
+    final size = pose?.imageSize;
+    final ratio = (size != null && size.width > 0 && size.height > 0)
+        ? size.width / size.height
+        : 3 / 4;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: AspectRatio(
+        aspectRatio: ratio,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.memory(bytes, fit: BoxFit.cover),
+            if (pose != null)
+              CustomPaint(
+                painter: PoseSkeletonPainter(
+                  joints: pose!.joints,
+                  confidence: pose!.confidence,
+                  lineColor: colors.coachLine,
+                  jointColor: colors.coachJoint,
+                ),
+              ),
+            Positioned(
+              left: 10,
+              right: 10,
+              bottom: 10,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  child: Text(
+                    pose == null
+                        ? 'No pose found in this photo'
+                        : 'Detected pose — balance & symmetry only',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AppColors.onCoachDark,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
                 ),
               ),
             ),

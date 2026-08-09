@@ -22,6 +22,7 @@ class ClipAnalysisResult {
     required this.phaseScores,
     required this.athletePeakJoints,
     required this.modelPeakJoints,
+    this.isStillImage = false,
   });
 
   final String clipName;
@@ -46,6 +47,9 @@ class ClipAnalysisResult {
   final List<Offset> athletePeakJoints;
   final List<Offset> modelPeakJoints;
 
+  /// True when analysis came from a still photo (no timing / phase motion).
+  final bool isStillImage;
+
   String get skillLabel => kind.labelFor(sport);
 
   bool get hasAthleteDescription => athleteDescription.trim().isNotEmpty;
@@ -61,6 +65,7 @@ class ClipAnalysisResult {
     List<RepScore>? phaseScores,
     List<Offset>? athletePeakJoints,
     List<Offset>? modelPeakJoints,
+    bool? isStillImage,
   }) {
     return ClipAnalysisResult(
       clipName: clipName,
@@ -76,29 +81,32 @@ class ClipAnalysisResult {
       phaseScores: phaseScores ?? this.phaseScores,
       athletePeakJoints: athletePeakJoints ?? this.athletePeakJoints,
       modelPeakJoints: modelPeakJoints ?? this.modelPeakJoints,
+      isStillImage: isStillImage ?? this.isStillImage,
     );
   }
 
   /// Compact block for Ask AI / coach prompts.
   String get aiContextBlock {
     final athleteBlock = hasAthleteDescription
-        ? 'Athlete’s own description of the clip:\n${athleteDescription.trim()}\n\n'
-        : 'Athlete has not written a clip description yet.\n\n';
+        ? 'Athlete’s own description:\n${athleteDescription.trim()}\n\n'
+        : 'Athlete has not written a description yet.\n\n';
 
     final source = clipName.startsWith('Live session')
         ? 'Athlete just recorded a live Coach session "$clipName" ($skillLabel).'
-        : 'Athlete just imported clip "$clipName" ($skillLabel).';
+        : isStillImage
+            ? 'Athlete just imported still photo "$clipName" ($skillLabel). Judge balance and symmetry only — do not comment on timing or rhythm.'
+            : 'Athlete just imported clip "$clipName" ($skillLabel).';
 
     return '''
 $source
 $athleteBlock
-What the coach system sees in the motion:
+What the coach system sees:
 $motionDescription
 
 Coach cues already given:
 ${feedback.map((f) => '- $f').join('\n')}
 Overall form score: $overallScore/100.
-Respond as if you clearly watched this motion. Prefer the athlete’s description when they wrote one. Do not invent unrelated mistakes, and do not quote joint angles in degrees.
+Respond as if you clearly watched this ${isStillImage ? 'still pose' : 'motion'}. Prefer the athlete’s description when they wrote one. Do not invent unrelated mistakes, and do not quote joint angles in degrees.
 ''';
   }
 }

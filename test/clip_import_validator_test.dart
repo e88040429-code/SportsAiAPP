@@ -31,18 +31,28 @@ void main() {
       expect(ClipImportValidator.validate(zeroSized), contains('empty'));
     });
 
-    test('rejects disallowed extensions like png and pdf', () {
-      final png = _file(
-        name: 'photo.png',
-        bytes: const [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
-      );
-      expect(ClipImportValidator.validate(png), contains('Only video'));
-
+    test('rejects disallowed extensions like pdf', () {
       final pdf = _file(
         name: 'doc.pdf',
         bytes: '%PDF-1.4'.codeUnits,
       );
-      expect(ClipImportValidator.validate(pdf), contains('Only video'));
+      expect(ClipImportValidator.validate(pdf), contains('Only video clips or still photos'));
+    });
+
+    test('accepts still photo extensions with image magic', () {
+      final png = _file(
+        name: 'pose.png',
+        bytes: const [
+          0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0,
+        ],
+      );
+      expect(ClipImportValidator.validate(png), isNull);
+
+      final jpeg = _file(
+        name: 'stance.jpg',
+        bytes: const [0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0],
+      );
+      expect(ClipImportValidator.validate(jpeg), isNull);
     });
 
     test('rejects image bytes even when renamed to .mp4', () {

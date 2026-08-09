@@ -20,6 +20,17 @@ class LivePoseInsights {
   final bool hasPose;
 }
 
+/// Still-photo scores (0–1). Timing is omitted — a single frame has no rhythm.
+class StillPoseScores {
+  const StillPoseScores({
+    required this.balance,
+    required this.symmetry,
+  });
+
+  final double balance;
+  final double symmetry;
+}
+
 /// Derives Balance / Symmetry / Timing (or soccer Plant / Contact / Follow)
 /// and a short cue from live pose landmarks.
 ///
@@ -36,33 +47,51 @@ class LivePoseCoach {
   PoseFrame? _lastFrame;
   LivePoseInsights? _lastInsights;
 
-  LivePoseInsights analyze(PoseFrame? frame, AppSport sport) {
+  LivePoseInsights analyze(
+    PoseFrame? frame,
+    AppSport sport, {
+    bool stillImage = false,
+  }) {
     if (frame == null) {
       _lastFrame = null;
       _lastInsights = LivePoseInsights(
-        cue: 'Stand in frame so I can track your form — or import a clip.',
-        metrics: _idleMetrics(sport),
+        cue: stillImage
+            ? 'I couldn’t find a full body in this photo. Try a clearer standing shot.'
+            : 'Stand in frame so I can track your form — or import a clip.',
+        metrics: stillImage ? _idleStillMetrics() : _idleMetrics(sport),
         hasPose: false,
       );
       return _lastInsights!;
     }
 
     // Cue + metrics builders may both call analyze for the same frame.
-    if (identical(frame, _lastFrame) && _lastInsights != null) {
+    if (!stillImage && identical(frame, _lastFrame) && _lastInsights != null) {
       return _lastInsights!;
     }
 
-    _history.add(frame);
-    while (_history.length > historyLimit) {
-      _history.removeAt(0);
+    if (!stillImage) {
+      _history.add(frame);
+      while (_history.length > historyLimit) {
+        _history.removeAt(0);
+      }
     }
 
     _lastFrame = frame;
-    _lastInsights = switch (sport) {
-      AppSport.volleyball => _volleyball(frame),
-      AppSport.soccer => _soccer(frame),
-    };
+    _lastInsights = stillImage
+        ? _still(frame)
+        : switch (sport) {
+            AppSport.volleyball => _volleyball(frame),
+            AppSport.soccer => _soccer(frame),
+          };
     return _lastInsights!;
+  }
+
+  /// Balance + symmetry only — use for imported still photos.
+  StillPoseScores stillScores(PoseFrame frame) {
+    return StillPoseScores(
+      balance: _balanceScore(frame),
+      symmetry: _symmetryScore(frame),
+    );
   }
 
   void reset() {
@@ -70,6 +99,23 @@ class LivePoseCoach {
     _smoothed.clear();
     _lastFrame = null;
     _lastInsights = null;
+  }
+
+  LivePoseInsights _still(PoseFrame frame) {
+    final balance = _balanceScore(frame);
+    final symmetry = _symmetryScore(frame);
+    final metrics = [
+      CoachMetric(label: 'Balance', value: _pct(balance, 'still-balance')),
+      CoachMetric(label: 'Symmetry', value: _pct(symmetry, 'still-symmetry')),
+    ];
+    final cue = _pickCue(
+      scored: [
+        (balance, 'Find a quieter base — stack hips under your shoulders.'),
+        (symmetry, 'Match left and right — even out your arm and leg shapes.'),
+      ],
+      fallback: 'Solid still shape — hold that stack and even limbs.',
+    );
+    return LivePoseInsights(cue: cue, metrics: metrics, hasPose: true);
   }
 
   LivePoseInsights _volleyball(PoseFrame frame) {
@@ -297,6 +343,11 @@ class LivePoseCoach {
             CoachMetric(label: 'Follow', value: '—'),
           ],
       };
+
+  List<CoachMetric> _idleStillMetrics() => const [
+        CoachMetric(label: 'Balance', value: '—'),
+        CoachMetric(label: 'Symmetry', value: '—'),
+      ];
 
   static bool _vis(PoseFrame frame, int index) =>
       frame.isJointVisible(index, minVisibility: BlazePoseToCoco.minVisibility);

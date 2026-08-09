@@ -134,10 +134,57 @@ class PoseDetectorService {
     }
   }
 
+  /// One-shot detect for an imported still photo. Does not publish to [latestFrame].
+  Future<PoseFrame?> detectStillImage(
+    Uint8List bytes, {
+    required Size imageSize,
+  }) async {
+    final detector = _detector;
+    if (detector == null || _disposed || bytes.isEmpty) return null;
+
+    final deadline = DateTime.now().add(const Duration(seconds: 4));
+    while (_busy && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      if (_disposed) return null;
+    }
+    if (_busy) return null;
+
+    _busy = true;
+    try {
+      final poses = await detector.detect(bytes);
+      if (_disposed) return null;
+      return _frameFromPoses(
+        poses,
+        fallbackImageSize: imageSize,
+        mirrorHorizontally: false,
+        previous: null,
+      );
+    } catch (e) {
+      debugPrint('PoseDetectorService.detectStillImage: $e');
+      return null;
+    } finally {
+      _busy = false;
+    }
+  }
+
   void _publish(
     List<Pose> poses, {
     required Size fallbackImageSize,
     required bool mirrorHorizontally,
+  }) {
+    latestFrame.value = _frameFromPoses(
+      poses,
+      fallbackImageSize: fallbackImageSize,
+      mirrorHorizontally: mirrorHorizontally,
+      previous: latestFrame.value,
+    );
+  }
+
+  PoseFrame? _frameFromPoses(
+    List<Pose> poses, {
+    required Size fallbackImageSize,
+    required bool mirrorHorizontally,
+    PoseFrame? previous,
   }) {
     Pose? best;
     for (final pose in poses) {
@@ -146,10 +193,7 @@ class PoseDetectorService {
         best = pose;
       }
     }
-    if (best == null) {
-      latestFrame.value = null;
-      return;
-    }
+    if (best == null) return null;
 
     // Prefer detector-reported image size — landmarks are in that pixel space.
     final imageSize = (best.imageWidth > 0 && best.imageHeight > 0)
@@ -166,8 +210,7 @@ class PoseDetectorService {
       );
     }
 
-    final previous = latestFrame.value;
-    latestFrame.value = BlazePoseToCoco.fromCocoLandmarks(
+    return BlazePoseToCoco.fromCocoLandmarks(
       coco,
       imageSize: imageSize,
       mirrorHorizontally: mirrorHorizontally,

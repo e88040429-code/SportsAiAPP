@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ViewFocusEvent, ViewFocusState;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -100,9 +101,29 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   bool _capturingJpeg = false;
   bool _streaming = false;
 
+  /// Bumped on every open/release so stale async camera work is ignored.
+  int _cameraOp = 0;
+  bool _windowFocused = true;
+
   bool get _isFrontCamera {
     if (_cameras.isEmpty) return true;
     return _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
+  }
+
+  bool get _shouldHoldCamera => _tabActive && _windowFocused;
+
+  CameraController? _usableController([CameraController? candidate]) {
+    final controller = candidate ?? _controller;
+    if (controller == null || !identical(_controller, controller)) return null;
+    try {
+      if (!controller.value.isInitialized || controller.value.hasError) {
+        return null;
+      }
+      return controller;
+    } catch (_) {
+      // Disposed controllers throw if you touch [value].
+      return null;
+    }
   }
 
   @override
@@ -119,9 +140,11 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
     if (active == _tabActive) return;
     _tabActive = active;
     if (active) {
-      _bootstrap();
+      if (_windowFocused) {
+        unawaited(_bootstrap());
+      }
     } else {
-      _releaseCamera();
+      unawaited(_releaseCamera());
     }
   }
 
@@ -140,10 +163,14 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _cameraOp++;
     unawaited(_stopPoseFeed());
     final controller = _controller;
     _controller = null;
-    controller?.dispose();
+    if (controller != null) {
+      controller.removeListener(_onControllerUpdated);
+      unawaited(controller.dispose());
+    }
     super.dispose();
   }
 
@@ -151,43 +178,91 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!_tabActive) return;
 
+    switch (state) {
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        // Drop the device before another app can steal it (Windows crash path).
+        unawaited(_releaseCamera());
+      case AppLifecycleState.resumed:
+        if (_windowFocused) unawaited(_reopenIfNeeded());
+    }
+  }
+
+  @override
+  void didChangeViewFocus(ViewFocusEvent event) {
+    _windowFocused = event.state == ViewFocusState.focused;
+    if (!_tabActive) return;
+
+    if (!_windowFocused) {
+      unawaited(_releaseCamera());
+    } else {
+      unawaited(_reopenIfNeeded());
+    }
+  }
+
+  void _onControllerUpdated() {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) {
-      if (state == AppLifecycleState.resumed) {
-        _bootstrap();
-      }
+    if (controller == null) return;
+    try {
+      if (!controller.value.hasError) return;
+    } catch (_) {
+      unawaited(_releaseCamera());
       return;
     }
+    unawaited(_handleCameraLost(controller.value.errorDescription));
+  }
 
-    if (state == AppLifecycleState.inactive) {
-      unawaited(_stopPoseFeed());
-      _controller = null;
-      if (mounted) setState(() {});
-      controller.dispose();
-    } else if (state == AppLifecycleState.resumed) {
-      if (_cameras.isNotEmpty) {
-        _openCamera(_cameras[_cameraIndex]);
-      } else {
-        _bootstrap();
-      }
+  Future<void> _handleCameraLost(String? description) async {
+    await _releaseCamera();
+    if (!mounted || !_tabActive) return;
+    setState(() {
+      _initializing = false;
+      _permissionBlocked = false;
+      _errorMessage = _messageForLostCamera(description);
+    });
+  }
+
+  Future<void> _reopenIfNeeded() async {
+    if (!_shouldHoldCamera || _initializing) return;
+    if (_usableController() != null) return;
+    if (_cameras.isNotEmpty) {
+      await _openCamera(_cameras[_cameraIndex]);
+    } else {
+      await _bootstrap();
     }
   }
 
   Future<void> _releaseCamera() async {
+    final op = ++_cameraOp;
     await _stopPoseFeed();
+
+    final deadline = DateTime.now().add(const Duration(milliseconds: 500));
+    while (_capturingJpeg && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    }
+    _capturingJpeg = false;
+
+    if (op != _cameraOp) return;
+
     final previous = _controller;
     _controller = null;
     if (mounted) {
       setState(() {
         _initializing = false;
-        // Keep last error so returning to Coach still explains a block.
       });
     }
-    await previous?.dispose();
+    if (previous != null) {
+      previous.removeListener(_onControllerUpdated);
+      try {
+        await previous.dispose();
+      } catch (_) {}
+    }
   }
 
   Future<void> _bootstrap() async {
-    if (!_tabActive) return;
+    if (!_shouldHoldCamera) return;
 
     setState(() {
       _initializing = true;
@@ -196,7 +271,7 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
 
     try {
       final cameras = await availableCameras();
-      if (!mounted || !_tabActive) return;
+      if (!mounted || !_shouldHoldCamera) return;
 
       if (cameras.isEmpty) {
         setState(() {
@@ -214,10 +289,10 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
       _cameraIndex = frontIndex >= 0 ? frontIndex : 0;
       await _openCamera(cameras[_cameraIndex]);
     } on CameraException catch (e) {
-      if (!mounted || !_tabActive) return;
+      if (!mounted || !_shouldHoldCamera) return;
       _applyCameraFailure(e);
     } catch (_) {
-      if (!mounted || !_tabActive) return;
+      if (!mounted || !_shouldHoldCamera) return;
       setState(() {
         _initializing = false;
         _permissionBlocked = false;
@@ -228,8 +303,9 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   }
 
   Future<void> _openCamera(CameraDescription camera) async {
-    if (!_tabActive) return;
+    if (!_shouldHoldCamera) return;
 
+    final op = ++_cameraOp;
     setState(() {
       _initializing = true;
     });
@@ -239,6 +315,7 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
     final previous = _controller;
     // Drop the disposed controller from the tree before releasing it.
     if (previous != null) {
+      previous.removeListener(_onControllerUpdated);
       _controller = null;
       if (mounted) setState(() {});
     }
@@ -247,21 +324,29 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
       camera,
       ResolutionPreset.medium,
       enableAudio: false,
-      imageFormatGroup: kIsWeb ? null : ImageFormatGroup.yuv420,
+      // YUV stream path is mobile-oriented; web/Windows use JPEG snapshots.
+      imageFormatGroup: (!kIsWeb &&
+              defaultTargetPlatform != TargetPlatform.windows)
+          ? ImageFormatGroup.yuv420
+          : null,
     );
 
     try {
       await controller.initialize();
-      if (!mounted || !_tabActive) {
+      if (op != _cameraOp || !mounted || !_shouldHoldCamera) {
         await controller.dispose();
         return;
       }
 
-      await previous?.dispose();
+      if (previous != null) {
+        try {
+          await previous.dispose();
+        } catch (_) {}
+      }
       // Helps web release the previous MediaStream before opening another.
       await Future<void>.delayed(const Duration(milliseconds: 80));
 
-      if (!mounted || !_tabActive) {
+      if (op != _cameraOp || !mounted || !_shouldHoldCamera) {
         await controller.dispose();
         return;
       }
@@ -284,6 +369,12 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
         // Web / unsupported — digital crop-in from 1x.
       }
 
+      if (op != _cameraOp || !mounted || !_shouldHoldCamera) {
+        await controller.dispose();
+        return;
+      }
+
+      controller.addListener(_onControllerUpdated);
       setState(() {
         _controller = controller;
         _minZoom = useHardware ? minZoom : _fitZoom;
@@ -295,16 +386,27 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
         _permissionBlocked = false;
       });
 
+      if (op != _cameraOp) {
+        controller.removeListener(_onControllerUpdated);
+        _controller = null;
+        await controller.dispose();
+        return;
+      }
+
       if (widget.poseEnabled) {
         await _startPoseFeed();
       }
     } on CameraException catch (e) {
-      await controller.dispose();
-      if (!mounted || !_tabActive) return;
+      try {
+        await controller.dispose();
+      } catch (_) {}
+      if (op != _cameraOp || !mounted || !_shouldHoldCamera) return;
       _applyCameraFailure(e);
     } catch (_) {
-      await controller.dispose();
-      if (!mounted || !_tabActive) return;
+      try {
+        await controller.dispose();
+      } catch (_) {}
+      if (op != _cameraOp || !mounted || !_shouldHoldCamera) return;
       setState(() {
         _initializing = false;
         _permissionBlocked = false;
@@ -315,12 +417,8 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   }
 
   Future<void> _startPoseFeed() async {
-    final controller = _controller;
-    if (!widget.poseEnabled ||
-        controller == null ||
-        !controller.value.isInitialized) {
-      return;
-    }
+    final live = _usableController();
+    if (!widget.poseEnabled || live == null) return;
 
     if (kIsWeb || widget.onStreamFrame == null) {
       _webCaptureTimer?.cancel();
@@ -330,9 +428,9 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
       return;
     }
 
-    if (_streaming || controller.value.isStreamingImages) return;
     try {
-      await controller.startImageStream(_onCameraImage);
+      if (_streaming || live.value.isStreamingImages) return;
+      await live.startImageStream(_onCameraImage);
       _streaming = true;
     } catch (e) {
       debugPrint('Image stream unavailable, falling back to JPEG: $e');
@@ -346,43 +444,44 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   Future<void> _stopPoseFeed() async {
     _webCaptureTimer?.cancel();
     _webCaptureTimer = null;
-    _capturingJpeg = false;
 
     final controller = _controller;
-    if (_streaming &&
-        controller != null &&
-        controller.value.isStreamingImages) {
+    if (_streaming && controller != null) {
       try {
-        await controller.stopImageStream();
+        if (controller.value.isStreamingImages) {
+          await controller.stopImageStream();
+        }
       } catch (_) {}
     }
     _streaming = false;
   }
 
   Future<void> _captureJpegFrame() async {
-    if (_capturingJpeg || !widget.poseEnabled || !mounted) return;
+    if (_capturingJpeg || !widget.poseEnabled || !mounted || !_shouldHoldCamera) {
+      return;
+    }
     if (widget.canCaptureFrame?.call() == false) return;
 
-    final controller = _controller;
+    final live = _usableController();
     final callback = widget.onJpegFrame;
-    if (callback == null ||
-        controller == null ||
-        !controller.value.isInitialized ||
-        controller.value.isTakingPicture) {
+    if (callback == null || live == null) return;
+    try {
+      if (live.value.isTakingPicture) return;
+    } catch (_) {
       return;
     }
 
     _capturingJpeg = true;
     try {
-      final file = await controller.takePicture();
-      if (!mounted || !identical(_controller, controller)) return;
+      final file = await live.takePicture();
+      if (!mounted || !identical(_controller, live)) return;
 
       final bytes = await file.readAsBytes();
-      if (!mounted || !identical(_controller, controller) || bytes.isEmpty) {
+      if (!mounted || !identical(_controller, live) || bytes.isEmpty) {
         return;
       }
 
-      final preview = controller.value.previewSize;
+      final preview = live.value.previewSize;
       final fromJpeg = _jpegPixelSize(bytes);
       final imageSize = fromJpeg ??
           Size(
@@ -398,11 +497,20 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
         ),
       );
     } on CameraException catch (e) {
-      // Common during flip/dispose — ignore disposed-controller races.
-      if (e.code.contains('Disposed') || e.code.contains('disposed')) return;
+      if (_isDisposedCameraError(e.code, e.description)) {
+        await _stopPoseFeed();
+        return;
+      }
+      if (_isCameraInUseError(e.code, e.description)) {
+        await _handleCameraLost(e.description);
+        return;
+      }
       debugPrint('JPEG pose capture failed: $e');
     } catch (e) {
-      debugPrint('JPEG pose capture failed: $e');
+      if (_isDisposedCameraError('', e.toString())) {
+        await _stopPoseFeed();
+        return;
+      }
     } finally {
       _capturingJpeg = false;
     }
@@ -446,16 +554,18 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   }
 
   void _onCameraImage(CameraImage image) {
-    final controller = _controller;
+    final live = _usableController();
     final callback = widget.onStreamFrame;
-    if (!widget.poseEnabled || controller == null || callback == null) return;
+    if (!widget.poseEnabled || live == null || callback == null) {
+      return;
+    }
 
     final rotation = rotationForFrame(
       width: image.width,
       height: image.height,
-      sensorOrientation: controller.description.sensorOrientation,
+      sensorOrientation: live.description.sensorOrientation,
       isFrontCamera: _isFrontCamera,
-      deviceOrientation: controller.value.deviceOrientation,
+      deviceOrientation: live.value.deviceOrientation,
     );
 
     final size = detectionSize(
@@ -510,12 +620,41 @@ class _CoachCameraPreviewState extends State<CoachCameraPreview>
   }
 
   String _messageForCameraException(CameraException e) {
+    if (_isCameraInUseError(e.code, e.description)) {
+      return _messageForLostCamera(e.description);
+    }
     switch (e.code) {
       case 'cameraNotReadable':
         return 'Camera is in use by another app. Close other camera apps and retry.';
       default:
         return e.description ?? 'Could not open the camera.';
     }
+  }
+
+  String _messageForLostCamera(String? description) {
+    if (_isCameraInUseError('', description)) {
+      return 'Camera is in use by another app. Close that app, then tap Try again.';
+    }
+    if (description != null && description.trim().isNotEmpty) {
+      return description;
+    }
+    return 'Camera disconnected. Tap Try again.';
+  }
+
+  bool _isDisposedCameraError(String code, String? description) {
+    final text = '$code ${description ?? ''}'.toLowerCase();
+    return text.contains('disposed') || text.contains('used after');
+  }
+
+  bool _isCameraInUseError(String code, String? description) {
+    final text = '$code ${description ?? ''}'.toLowerCase();
+    return text.contains('in use') ||
+        text.contains('notreadable') ||
+        text.contains('not readable') ||
+        text.contains('cameraexclusive') ||
+        text.contains('exclusive') ||
+        text.contains('already in use') ||
+        text.contains('device busy');
   }
 
   Future<void> _flipCamera() async {

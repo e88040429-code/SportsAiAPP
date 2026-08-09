@@ -74,6 +74,19 @@ void main() {
     expect(balB, lessThan(balA));
   });
 
+  test('still images only report balance and symmetry', () {
+    final coach = LivePoseCoach();
+    final insights = coach.analyze(
+      _standing(),
+      AppSport.volleyball,
+      stillImage: true,
+    );
+
+    expect(insights.hasPose, isTrue);
+    expect(insights.metrics.map((m) => m.label), ['Balance', 'Symmetry']);
+    expect(insights.cue.toLowerCase(), isNot(contains('rhythm')));
+  });
+
   test('soccer metrics use Plant / Contact / Follow labels', () {
     final coach = LivePoseCoach();
     final insights = coach.analyze(_standing(), AppSport.soccer);

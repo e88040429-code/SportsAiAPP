@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -14,7 +16,9 @@ import 'data/clip_analysis_session.dart';
 import 'data/clip_form_analyzer.dart';
 import 'data/clip_import_validator.dart';
 import 'data/clip_video_loader.dart';
+import 'data/coach_mock_data.dart';
 import 'data/model_pose_library.dart';
+import 'data/picked_file_bytes.dart';
 import 'pose/live_pose_coach.dart';
 import 'pose/live_session_recorder.dart';
 import 'pose/pose_detector_service.dart';
@@ -41,6 +45,10 @@ class _CoachScreenState extends State<CoachScreen> {
 
   String? _clipName;
   VideoPlayerController? _video;
+  Uint8List? _stillImageBytes;
+  PoseFrame? _stillPose;
+  List<CoachMetric> _stillMetrics = const [];
+  bool _importIsImage = false;
   SkillModelKind _modelKind = SkillModelKind.hitting;
   ClipAnalysisResult? _analysis;
   final _athleteDescriptionController = TextEditingController();
@@ -142,7 +150,7 @@ class _CoachScreenState extends State<CoachScreen> {
   Future<void> _importClip() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: kAllowedClipExtensions.toList(growable: false),
+      allowedExtensions: kAllowedImportExtensions.toList(growable: false),
       withData: kIsWeb, // Web needs bytes to sniff; avoid loading whole clips on mobile.
       allowMultiple: false,
     );
@@ -164,15 +172,20 @@ class _CoachScreenState extends State<CoachScreen> {
 
     final name = file.name;
     final ext = (file.extension ?? name.split('.').last).toLowerCase();
+    final stillImage = isImageImportExtension(ext);
 
     setState(() {
       _analyzingClip = true;
-      _converting = false;
+      _converting = stillImage;
       _clipName = name;
       _previewNote = null;
       _modelKind = SkillModelKind.hitting;
       _athleteDescriptionController.clear();
       _analysis = null;
+      _stillImageBytes = null;
+      _stillPose = null;
+      _stillMetrics = const [];
+      _importIsImage = stillImage;
     });
     _poseService.clearFrame();
     _poseCoach.reset();
@@ -182,8 +195,86 @@ class _CoachScreenState extends State<CoachScreen> {
     }
 
     await _disposeVideo();
-    // Load video in background — description + Generate come first.
-    unawaited(_loadVideoPreview(file, ext));
+    if (stillImage) {
+      unawaited(_loadStillImage(file));
+    } else {
+      unawaited(_loadVideoPreview(file, ext));
+    }
+  }
+
+  Future<void> _loadStillImage(PlatformFile file) async {
+    final bytes = await readPickedFileBytes(file);
+    if (!mounted) return;
+    if (bytes == null || bytes.isEmpty) {
+      setState(() {
+        _converting = false;
+        _previewNote =
+            'Could not read that photo. Try another JPG or PNG.';
+      });
+      return;
+    }
+
+    setState(() => _stillImageBytes = bytes);
+
+    await _poseService.initialize();
+    if (!mounted) return;
+    if (!_poseService.isReady) {
+      setState(() {
+        _converting = false;
+        _previewNote =
+            'Pose model isn’t ready yet. Tap Generate after it finishes loading.';
+      });
+      return;
+    }
+
+    final imageSize = await _decodeImageSize(bytes);
+    final frame = await _poseService.detectStillImage(
+      bytes,
+      imageSize: imageSize,
+    );
+    if (!mounted) return;
+
+    if (frame == null) {
+      setState(() {
+        _converting = false;
+        _stillPose = null;
+        _stillMetrics = const [];
+        _previewNote =
+            'No person found in this photo. Try a clearer full-body standing shot.';
+      });
+      return;
+    }
+
+    final insights = _poseCoach.analyze(frame, appSportController.sport, stillImage: true);
+    final analysis = ClipFormAnalyzer.analyzeStill(
+      clipName: _clipName ?? file.name,
+      sport: appSportController.sport,
+      kind: _modelKind,
+      frame: frame,
+    );
+    clipAnalysisController.publish(analysis);
+    setState(() {
+      _stillPose = frame;
+      _stillMetrics = insights.metrics;
+      _analysis = analysis;
+      _converting = false;
+      _previewNote = null;
+    });
+  }
+
+  Future<Size> _decodeImageSize(Uint8List bytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+      final size = Size(image.width.toDouble(), image.height.toDouble());
+      image.dispose();
+      return size.width > 0 && size.height > 0
+          ? size
+          : const Size(1280, 720);
+    } catch (_) {
+      return const Size(1280, 720);
+    }
   }
 
   Future<void> _loadVideoPreview(PlatformFile file, String ext) async {
@@ -218,13 +309,43 @@ class _CoachScreenState extends State<CoachScreen> {
     if (name == null || _converting) return;
 
     final description = _athleteDescriptionController.text.trim();
-    if (description.isEmpty) {
+    if (!_importIsImage && description.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Add a short description of your clip first.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
+      return;
+    }
+
+    if (_importIsImage) {
+      final frame = _stillPose;
+      if (frame == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No pose in this photo yet. Try another full-body shot.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      setState(() => _converting = true);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      final analysis = ClipFormAnalyzer.analyzeStill(
+        clipName: name,
+        sport: appSportController.sport,
+        kind: _modelKind,
+        frame: frame,
+      ).copyWith(athleteDescription: description);
+      clipAnalysisController.publish(analysis);
+      if (!mounted) return;
+      setState(() {
+        _analysis = analysis;
+        _converting = false;
+      });
       return;
     }
 
@@ -259,7 +380,17 @@ class _CoachScreenState extends State<CoachScreen> {
 
   void _onKindChanged(SkillModelKind kind) {
     setState(() => _modelKind = kind);
-    // Don't auto-generate — athlete taps Generate again after changing skill.
+    final frame = _stillPose;
+    if (_importIsImage && frame != null && !_converting) {
+      final analysis = ClipFormAnalyzer.analyzeStill(
+        clipName: _clipName ?? 'Imported photo',
+        sport: appSportController.sport,
+        kind: kind,
+        frame: frame,
+      ).copyWith(athleteDescription: _athleteDescriptionController.text.trim());
+      clipAnalysisController.publish(analysis);
+      setState(() => _analysis = analysis);
+    }
   }
 
   void _openRecap() {
@@ -282,6 +413,10 @@ class _CoachScreenState extends State<CoachScreen> {
       _clipName = null;
       _previewNote = null;
       _analysis = null;
+      _stillImageBytes = null;
+      _stillPose = null;
+      _stillMetrics = const [];
+      _importIsImage = false;
       // Keep last published result in clipAnalysisController for Recap.
     });
   }
@@ -321,9 +456,14 @@ class _CoachScreenState extends State<CoachScreen> {
             body: ClipAnalysisPanel(
               sport: sport,
               kind: _modelKind,
-              clipName: _clipName ?? 'Imported clip',
+              clipName: _clipName ??
+                  (_importIsImage ? 'Imported photo' : 'Imported clip'),
               videoController: _video,
               previewNote: _previewNote,
+              imageBytes: _stillImageBytes,
+              stillPose: _stillPose,
+              stillMetrics: _stillMetrics,
+              isStillImage: _importIsImage,
               isGenerating: _converting,
               analysis: _analysis,
               athleteDescriptionController: _athleteDescriptionController,
@@ -343,7 +483,11 @@ class _CoachScreenState extends State<CoachScreen> {
               CoachCameraPreview(
                 poseEnabled: true,
                 onJpegFrame: _onJpegFrame,
-                onStreamFrame: kIsWeb ? null : _onStreamFrame,
+                // Image streams are unsupported on web and Windows camera_windows.
+                onStreamFrame: (kIsWeb ||
+                        defaultTargetPlatform == TargetPlatform.windows)
+                    ? null
+                    : _onStreamFrame,
                 poseFrameListenable: _poseService.latestFrame,
                 canCaptureFrame: () =>
                     _poseService.isReady && !_poseService.isBusy,
@@ -467,8 +611,8 @@ class _CoachScreenState extends State<CoachScreen> {
                                   vertical: 10,
                                 ),
                               ),
-                              icon: const Icon(Icons.video_file_outlined, size: 18),
-                              label: const Text('Import clip'),
+                              icon: const Icon(Icons.perm_media_outlined, size: 18),
+                              label: const Text('Import clip / photo'),
                             ),
                           ],
                         ),
@@ -518,8 +662,8 @@ class _CoachScreenState extends State<CoachScreen> {
                                   icon: const Icon(Icons.upload_file),
                                   label: Text(
                                     kIsWeb
-                                        ? 'Import from desktop / files'
-                                        : 'Import from photos / files',
+                                        ? 'Import clip or photo'
+                                        : 'Import clip or photo',
                                   ),
                                 ),
                               ),

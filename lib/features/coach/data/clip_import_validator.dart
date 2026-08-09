@@ -12,40 +12,86 @@ const Set<String> kAllowedClipExtensions = {
   'mkv',
 };
 
+/// Still photos for pose check (balance / symmetry — no timing).
+const Set<String> kAllowedImageExtensions = {
+  'jpg',
+  'jpeg',
+  'png',
+  'webp',
+  'bmp',
+  'gif',
+};
+
+/// Video clips + still images accepted by Import.
+const Set<String> kAllowedImportExtensions = {
+  ...kAllowedClipExtensions,
+  ...kAllowedImageExtensions,
+};
+
+bool isImageImportExtension(String? ext) {
+  final value = ext?.toLowerCase().trim();
+  return value != null && kAllowedImageExtensions.contains(value);
+}
+
+bool isVideoImportExtension(String? ext) {
+  final value = ext?.toLowerCase().trim();
+  return value != null && kAllowedClipExtensions.contains(value);
+}
+
 /// Validates a picked file **before** opening the describe / Generate panel.
 abstract final class ClipImportValidator {
   /// Returns an error message if the file must be rejected; otherwise `null`.
   static String? validate(PlatformFile file) {
     final name = file.name.trim();
     if (name.isEmpty) {
-      return 'Could not read that file. Pick a video clip and try again.';
+      return 'Could not read that file. Pick a video clip or photo and try again.';
     }
 
     final ext = _extensionOf(file);
-    if (ext == null || !kAllowedClipExtensions.contains(ext)) {
-      return 'Only video clips are allowed '
-          '(MP4, MOV, M4V, WebM, AVI, MKV).';
+    if (ext == null || !kAllowedImportExtensions.contains(ext)) {
+      return 'Only video clips or still photos are allowed '
+          '(MP4, MOV, M4V, WebM, AVI, MKV, JPG, PNG, WebP, BMP, GIF).';
     }
 
     final size = _resolvedSize(file);
     if (size != null && size <= 0) {
-      return 'That file is empty (0 bytes). Pick a real video clip.';
+      return 'That file is empty (0 bytes). Pick a real clip or photo.';
     }
 
     final bytes = file.bytes;
     if (bytes != null) {
       if (bytes.isEmpty) {
-        return 'That file is empty (0 bytes). Pick a real video clip.';
+        return 'That file is empty (0 bytes). Pick a real clip or photo.';
       }
 
-      if (_looksLikeNonVideo(bytes)) {
-        return 'That file isn’t a video (it looks like an image or document). '
-            'Pick an MP4, MOV, or similar clip.';
+      if (_looksLikeDocument(bytes)) {
+        return 'That file looks like a document. '
+            'Pick a video clip or a still photo instead.';
       }
 
-      if (!_looksLikeVideoContainer(bytes)) {
-        return 'That file doesn’t look like a video clip. '
-            'Pick an MP4, MOV, WebM, or similar file.';
+      final imageExt = isImageImportExtension(ext);
+      final videoExt = isVideoImportExtension(ext);
+
+      if (imageExt) {
+        if (_looksLikeVideoContainer(bytes)) {
+          return 'That file doesn’t look like a still photo. '
+              'Pick a JPG, PNG, or similar image.';
+        }
+        if (bytes.length >= 12 && !_looksLikeImage(bytes)) {
+          return 'That file doesn’t look like a still photo. '
+              'Pick a JPG, PNG, WebP, or similar image.';
+        }
+      }
+
+      if (videoExt) {
+        if (_looksLikeImage(bytes)) {
+          return 'That file isn’t a video (it looks like an image or document). '
+              'Pick an MP4, MOV, or similar clip — or import it as a photo.';
+        }
+        if (!_looksLikeVideoContainer(bytes)) {
+          return 'That file doesn’t look like a video clip. '
+              'Pick an MP4, MOV, WebM, or similar file.';
+        }
       }
     }
 
@@ -71,8 +117,8 @@ abstract final class ClipImportValidator {
     return null;
   }
 
-  static bool _looksLikeNonVideo(Uint8List bytes) {
-    if (bytes.length < 4) return true;
+  static bool _looksLikeImage(Uint8List bytes) {
+    if (bytes.length < 4) return false;
 
     // PNG
     if (bytes[0] == 0x89 &&
@@ -87,8 +133,6 @@ abstract final class ClipImportValidator {
     }
     // GIF
     if (_ascii(bytes, 0, 3) == 'GIF') return true;
-    // PDF
-    if (_ascii(bytes, 0, 4) == '%PDF') return true;
     // BMP
     if (_ascii(bytes, 0, 2) == 'BM') return true;
     // WebP image (RIFF....WEBP)
@@ -97,9 +141,14 @@ abstract final class ClipImportValidator {
         _ascii(bytes, 8, 4) == 'WEBP') {
       return true;
     }
-    // ZIP / DOCX / etc.
-    if (bytes[0] == 0x50 && bytes[1] == 0x4B) return true;
 
+    return false;
+  }
+
+  static bool _looksLikeDocument(Uint8List bytes) {
+    if (bytes.length < 4) return false;
+    if (_ascii(bytes, 0, 4) == '%PDF') return true;
+    if (bytes[0] == 0x50 && bytes[1] == 0x4B) return true;
     return false;
   }
 
