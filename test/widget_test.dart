@@ -3,7 +3,7 @@ import 'package:setpoint_ai/app.dart';
 import 'package:setpoint_ai/core/router/app_router.dart';
 import 'package:setpoint_ai/core/sport/app_sport.dart';
 
-Future<void> _enterAppAsVolleyball(WidgetTester tester) async {
+Future<void> _pumpFreshApp(WidgetTester tester) async {
   appSportController.debugReset();
   await tester.pumpWidget(const SetPointApp());
   appRouter.go('/sports');

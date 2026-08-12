@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
@@ -15,10 +14,12 @@ import '../../core/theme/sport_colors.dart';
 import 'data/clip_analysis_session.dart';
 import 'data/clip_form_analyzer.dart';
 import 'data/clip_import_validator.dart';
+import 'data/clip_pose_extractor.dart';
 import 'data/clip_video_loader.dart';
 import 'data/coach_mock_data.dart';
 import 'data/model_pose_library.dart';
 import 'data/picked_file_bytes.dart';
+import 'pose/clip_pose_track.dart';
 import 'pose/live_pose_coach.dart';
 import 'pose/live_session_recorder.dart';
 import 'pose/pose_detector_service.dart';
@@ -49,6 +50,11 @@ class _CoachScreenState extends State<CoachScreen> {
   PoseFrame? _stillPose;
   List<CoachMetric> _stillMetrics = const [];
   bool _importIsImage = false;
+  int _clipPoseOp = 0;
+  ClipPoseTrack? _clipPoseTrack;
+  double? _poseOverlayProgress;
+  String? _poseOverlayNote;
+  bool _showSkeleton = true;
   SkillModelKind _modelKind = SkillModelKind.hitting;
   ClipAnalysisResult? _analysis;
   final _athleteDescriptionController = TextEditingController();
@@ -174,11 +180,13 @@ class _CoachScreenState extends State<CoachScreen> {
     final ext = (file.extension ?? name.split('.').last).toLowerCase();
     final stillImage = isImageImportExtension(ext);
 
+    _cancelClipPoseWork(resetToggle: true);
+    final poseOp = _clipPoseOp;
     setState(() {
       _analyzingClip = true;
       _converting = stillImage;
       _clipName = name;
-      _previewNote = null;
+      _previewNote = stillImage ? null : 'Loading video preview…';
       _modelKind = SkillModelKind.hitting;
       _athleteDescriptionController.clear();
       _analysis = null;
@@ -198,7 +206,7 @@ class _CoachScreenState extends State<CoachScreen> {
     if (stillImage) {
       unawaited(_loadStillImage(file));
     } else {
-      unawaited(_loadVideoPreview(file, ext));
+      unawaited(_loadVideoPreview(file, ext, poseOp));
     }
   }
 
@@ -277,13 +285,19 @@ class _CoachScreenState extends State<CoachScreen> {
     }
   }
 
-  Future<void> _loadVideoPreview(PlatformFile file, String ext) async {
+  Future<void> _loadVideoPreview(
+    PlatformFile file,
+    String ext,
+    int poseOp,
+  ) async {
     VideoPlayerController? controller;
     try {
       controller = await loadClipVideo(file);
-      await controller.initialize().timeout(const Duration(seconds: 4));
+      await controller.initialize().timeout(const Duration(seconds: 20));
       await controller.setLooping(true);
-      if (!mounted) {
+      // Chrome blocks unmuted autoplay once the file-picker gesture is gone.
+      await controller.setVolume(0);
+      if (!mounted || poseOp != _clipPoseOp) {
         await controller.dispose();
         return;
       }
@@ -291,17 +305,39 @@ class _CoachScreenState extends State<CoachScreen> {
         _video = controller;
         _previewNote = null;
       });
-      await controller.play();
-    } catch (_) {
+      try {
+        await controller.play();
+      } catch (e) {
+        debugPrint('Clip preview autoplay blocked: $e');
+      }
+      if (!mounted || poseOp != _clipPoseOp) return;
+      unawaited(_startClipPoseExtraction(controller, poseOp));
+    } catch (e, st) {
+      debugPrint('Clip preview failed: $e\n$st');
       await controller?.dispose();
       if (!mounted) return;
       setState(() {
         _video = null;
-        _previewNote = ext == 'mov' || ext == 'mkv'
-            ? 'Chrome can’t preview this $ext clip. You can still describe it and tap Generate.'
-            : 'Video preview isn’t available. Describe the clip below, then tap Generate.';
+        _previewNote = _previewFailureNote(ext, e);
       });
     }
+  }
+
+  String _previewFailureNote(String ext, Object error) {
+    if (ext == 'mov' || ext == 'mkv') {
+      return 'Chrome can’t preview this $ext clip. You can still describe it and tap Generate.';
+    }
+    final detail = error.toString().toLowerCase();
+    if (detail.contains('timeout')) {
+      return 'Video preview timed out. Try a shorter H.264 MP4 or WebM, or describe the clip and tap Generate.';
+    }
+    if (detail.contains('unsuitable') ||
+        detail.contains('src_not_supported') ||
+        detail.contains('not supported') ||
+        detail.contains('decode')) {
+      return 'Chrome can’t decode this clip (try H.264 MP4 or VP8/VP9 WebM). You can still describe it and tap Generate.';
+    }
+    return 'Video preview isn’t available. Try a short H.264 MP4 or WebM, or describe the clip and tap Generate.';
   }
 
   Future<void> _generateFeedback() async {
@@ -405,6 +441,7 @@ class _CoachScreenState extends State<CoachScreen> {
   }
 
   Future<void> _closeAnalysis() async {
+    _cancelClipPoseWork(resetToggle: true);
     await _disposeVideo();
     if (!mounted) return;
     setState(() {
@@ -421,6 +458,81 @@ class _CoachScreenState extends State<CoachScreen> {
     });
   }
 
+  void _cancelClipPoseWork({bool resetToggle = false}) {
+    _clipPoseOp++;
+    _clipPoseTrack = null;
+    _poseOverlayProgress = null;
+    _poseOverlayNote = null;
+    if (resetToggle) _showSkeleton = true;
+  }
+
+  Future<void> _startClipPoseExtraction(
+    VideoPlayerController controller,
+    int op,
+  ) async {
+    if (!mounted || op != _clipPoseOp) return;
+
+    if (!isClipPoseOverlaySupported) {
+      setState(() {
+        _clipPoseTrack = null;
+        _poseOverlayProgress = null;
+        _poseOverlayNote = 'Pose overlay is available in Chrome for now.';
+      });
+      return;
+    }
+
+    if (!mounted || op != _clipPoseOp) return;
+    setState(() {
+      _clipPoseTrack = null;
+      _poseOverlayProgress = 0;
+      _poseOverlayNote = null;
+    });
+
+    await _poseService.initialize();
+    if (!mounted || op != _clipPoseOp) return;
+
+    if (!_poseService.isReady) {
+      setState(() {
+        _poseOverlayProgress = null;
+        _poseOverlayNote =
+            'Pose model isn’t ready. Overlay is off — preview still plays.';
+      });
+      return;
+    }
+
+    final url = controller.dataSource;
+    final playableUrl = url.startsWith('blob:') ||
+        url.startsWith('http:') ||
+        url.startsWith('https:');
+    if (!playableUrl) {
+      setState(() {
+        _poseOverlayProgress = null;
+        _poseOverlayNote = 'Pose overlay is available in Chrome for now.';
+      });
+      return;
+    }
+
+    final result = await extractClipPoseTrack(
+      videoUrl: url,
+      duration: controller.value.duration,
+      detect: (bytes, imageSize) =>
+          _poseService.detectStillImage(bytes, imageSize: imageSize),
+      isCancelled: () => !mounted || op != _clipPoseOp,
+      onProgress: (progress) {
+        if (!mounted || op != _clipPoseOp) return;
+        setState(() => _poseOverlayProgress = progress);
+      },
+    );
+
+    if (!mounted || op != _clipPoseOp || result.cancelled) return;
+
+    setState(() {
+      _clipPoseTrack = result.track;
+      _poseOverlayProgress = null;
+      _poseOverlayNote = result.message;
+    });
+  }
+
   Future<void> _disposeVideo() async {
     final c = _video;
     _video = null;
@@ -431,6 +543,7 @@ class _CoachScreenState extends State<CoachScreen> {
 
   @override
   void dispose() {
+    _clipPoseOp++;
     _sessionRecorder.cancel();
     _poseService.latestFrame.removeListener(_onLivePoseFrame);
     _athleteDescriptionController.dispose();
@@ -464,6 +577,14 @@ class _CoachScreenState extends State<CoachScreen> {
               stillPose: _stillPose,
               stillMetrics: _stillMetrics,
               isStillImage: _importIsImage,
+              clipPoseTrack: _clipPoseTrack,
+              poseOverlayProgress: _poseOverlayProgress,
+              poseOverlayNote: _poseOverlayNote,
+              showSkeleton: _showSkeleton,
+              onToggleSkeleton: _clipPoseTrack != null &&
+                      _clipPoseTrack!.hasAnyPose
+                  ? () => setState(() => _showSkeleton = !_showSkeleton)
+                  : null,
               isGenerating: _converting,
               analysis: _analysis,
               athleteDescriptionController: _athleteDescriptionController,

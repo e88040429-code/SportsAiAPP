@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:setpoint_ai/features/coach/data/clip_import_validator.dart';
+import 'package:setpoint_ai/features/coach/data/clip_video_mime.dart';
 
 PlatformFile _file({
   required String name,
@@ -102,6 +103,39 @@ void main() {
         bytes: List<int>.generate(32, (i) => i + 3),
       );
       expect(ClipImportValidator.validate(junk), contains('doesn’t look like'));
+    });
+  });
+
+  group('videoMimeForImport', () {
+    test('sniffs WebM from EBML bytes even if extension is mp4', () {
+      expect(
+        videoMimeForImport(
+          extension: 'mp4',
+          bytes: Uint8List.fromList(const [
+            0x1A, 0x45, 0xDF, 0xA3, 0, 0, 0, 0, 0, 0, 0, 0,
+          ]),
+        ),
+        'video/webm',
+      );
+    });
+
+    test('sniffs MP4 from ftyp bytes', () {
+      expect(
+        videoMimeForImport(
+          extension: 'mov',
+          bytes: Uint8List.fromList(const [
+            0x00, 0x00, 0x00, 0x18,
+            0x66, 0x74, 0x79, 0x70,
+            0x69, 0x73, 0x6F, 0x6D,
+          ]),
+        ),
+        'video/mp4',
+      );
+    });
+
+    test('falls back to extension when bytes are missing', () {
+      expect(videoMimeForImport(extension: 'webm'), 'video/webm');
+      expect(videoMimeForImport(extension: 'mp4'), 'video/mp4');
     });
   });
 }

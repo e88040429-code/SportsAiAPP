@@ -12,6 +12,7 @@ Use this as the **entry point** for a new agent. Do **not** re-scaffold the app;
 |------------------------|---------------------|
 | Pose detection, Live Coach vision, Recap from pose | [`SETPOINT_PHASE1_HANDOFF.md`](SETPOINT_PHASE1_HANDOFF.md) |
 | Live AI referee, Firebase, Flask API, real drill content/videos, testing/QA | [`SETPOINT_PHASE2_HANDOFF.md`](SETPOINT_PHASE2_HANDOFF.md) |
+| Clip analysis: watch imported video + pose overlay | [`SETPOINT_CLIP_POSE_PLAYBACK_PROMPT.md`](SETPOINT_CLIP_POSE_PLAYBACK_PROMPT.md) |
 
 Do **not** attach both phase docs unless the task spans both phases.
 

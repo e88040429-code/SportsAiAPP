@@ -9,7 +9,9 @@ import '../../../core/theme/sport_colors.dart';
 import '../data/clip_analysis_session.dart';
 import '../data/coach_mock_data.dart';
 import '../data/model_pose_library.dart';
+import '../pose/clip_pose_track.dart';
 import '../pose/pose_frame.dart';
+import 'clip_pose_overlay_chrome.dart';
 import 'coach_metrics_bar.dart';
 import 'pose_skeleton_painter.dart';
 
@@ -266,6 +268,11 @@ class ClipAnalysisPanel extends StatelessWidget {
     this.stillPose,
     this.stillMetrics = const [],
     this.isStillImage = false,
+    this.clipPoseTrack,
+    this.poseOverlayProgress,
+    this.poseOverlayNote,
+    this.showSkeleton = true,
+    this.onToggleSkeleton,
     required this.isGenerating,
     this.analysis,
     required this.athleteDescriptionController,
@@ -284,6 +291,11 @@ class ClipAnalysisPanel extends StatelessWidget {
   final PoseFrame? stillPose;
   final List<CoachMetric> stillMetrics;
   final bool isStillImage;
+  final ClipPoseTrack? clipPoseTrack;
+  final double? poseOverlayProgress;
+  final String? poseOverlayNote;
+  final bool showSkeleton;
+  final VoidCallback? onToggleSkeleton;
   final bool isGenerating;
   final ClipAnalysisResult? analysis;
   final TextEditingController athleteDescriptionController;
@@ -408,10 +420,25 @@ class ClipAnalysisPanel extends StatelessWidget {
                           child: ListenableBuilder(
                             listenable: videoController!,
                             builder: (context, _) {
+                              final pose = showSkeleton
+                                  ? clipPoseTrack?.poseAt(
+                                      videoController!.value.position,
+                                    )
+                                  : null;
                               return Stack(
                                 alignment: Alignment.bottomCenter,
                                 children: [
                                   VideoPlayer(videoController!),
+                                  Positioned.fill(
+                                    child: ClipPoseOverlayChrome(
+                                      sport: sport,
+                                      pose: pose,
+                                      progress: poseOverlayProgress,
+                                      note: poseOverlayNote,
+                                      showSkeleton: showSkeleton,
+                                      onToggleSkeleton: onToggleSkeleton,
+                                    ),
+                                  ),
                                   Container(
                                     width: double.infinity,
                                     color: Colors.black45,
